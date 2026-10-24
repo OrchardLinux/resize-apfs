@@ -6,6 +6,11 @@ leave the released space unallocated or create an unformatted Linux partition.
 
 **Experimental. Back up your device first. Storage changes can cause data loss.**
 
+<p>
+  <img src="docs/screenshots/storage-overview.png" alt="Storage overview showing APFS, Linux and unallocated space on iPad" width="45%">
+  <img src="docs/screenshots/adjust-size.png" alt="Adjust size screen with target APFS size and Linux partition options" width="45%">
+</p>
+
 ## Requirements
 
 - A palera1n-compatible iPhone or iPad running iOS/iPadOS 16 or later.

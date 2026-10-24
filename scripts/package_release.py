@@ -57,6 +57,7 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
     for relative, expected in manifest['files'].items():
         mode = expected.get('mode', 0o755 if relative in ['ResizeAPFS.app/ResizeAPFS', 'resize-helper', 'resize-overlay-entry'] else 0o644)
         (package / 'out/device' / relative).chmod(mode)
+    shutil.copytree(ROOT / 'docs/screenshots', package / 'docs/screenshots')
     shutil.copytree(ROOT / 'third_party/libdmg-hfsplus', package / 'third_party/libdmg-hfsplus')
     for arch in ['x86_64', 'arm64']:
         source = ROOT / 'out/host-tools' / ('linux-' + arch)
