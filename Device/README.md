@@ -2,10 +2,8 @@
 
 ## Status
 
-Hardware testing covers iPad (6th generation, Wi-Fi / J71b), iPadOS 17.7.11. The
-CI-built release ZIP was prepared in Linux and booted through macOS palera1n.
-Boot, app registration/launch, real storage inspection and a 64 GB → 60 GB APFS
-shrink succeeded. Growth, Linux partition creation and other device/OS
+APFS shrinking and growing have been hardware-tested on iPad (6th generation,
+Wi-Fi / J71b), iPadOS 17.7.11. Linux partition creation and other device/OS
 combinations are not yet verified.
 
 ## Build and prepare
@@ -43,8 +41,8 @@ No filesystem mounts or root privileges are needed to prepare images on Linux.
 The backend validates UDIF geometry/CRCs, filesystem metadata, unique outer/inner
 IDs, root ownership, executable modes, symlinks and every app resource's readback.
 
-Linux-generated images have completed the boot, inspection and shrink checks
-above. Native Linux-host USB/DFU handling remains untested.
+Linux-generated overlays have been hardware-tested through macOS palera1n.
+Native Linux-host USB/DFU handling remains untested.
 
 ## Privileges and operation lifetime
 

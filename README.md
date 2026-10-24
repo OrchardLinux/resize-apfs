@@ -19,10 +19,9 @@ leave the released space unallocated or create an unformatted Linux partition.
 - [palera1n](https://palera.in/) 2.4 or later, installed separately and available in
   your PATH. Compatible overlays are checked by structure, not a version/hash whitelist.
 
-Hardware-tested on iPad (6th generation, Wi-Fi / J71b), iPadOS 17.7.11. The CI-built
-release ZIP, prepared in Linux and booted through macOS palera1n, successfully
-completed boot, app launch, storage inspection and a 64 GB → 60 GB APFS shrink.
-Growth, Linux partition creation, other device/OS combinations and native Linux
+APFS shrinking and growing have been hardware-tested on iPad (6th generation,
+Wi-Fi / J71b), iPadOS 17.7.11. Linux-generated overlays have also been tested.
+Linux partition creation, other device/OS combinations and native Linux-host
 USB/DFU remain unverified.
 
 ## Use
