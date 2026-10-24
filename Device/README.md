@@ -2,9 +2,11 @@
 
 ## Status
 
-Device testing currently covers an iPad (6th generation, Wi-Fi / J71b) running
-iPadOS 17.7.11, with a successful shrink from approximately 64 GB to 60 GB. Growth,
-Linux partition creation and other device/OS combinations are not yet verified.
+Hardware testing covers iPad (6th generation, Wi-Fi / J71b), iPadOS 17.7.11. The
+CI-built release ZIP was prepared in Linux and booted through macOS palera1n.
+Boot, app registration/launch, real storage inspection and a 64 GB → 60 GB APFS
+shrink succeeded. Growth, Linux partition creation and other device/OS
+combinations are not yet verified.
 
 ## Build and prepare
 
@@ -22,7 +24,7 @@ the original reference build, not a runtime whitelist.
 
 The launcher extracts that binpack locally and replaces the stock loader app with
 Resize APFS. The original boot hooks and daemon remain. The release ZIP contains
-only our payload and assembly scripts.
+our payload, launcher, Linux host tools and their corresponding source.
 
 The loader bundle retains the stock `palera1nLoader.app` path for boot compatibility;
 its bundle identifier is `dev.omarchy.resize-apfs`. Overlay SSH, telnet and debug
@@ -41,8 +43,8 @@ No filesystem mounts or root privileges are needed to prepare images on Linux.
 The backend validates UDIF geometry/CRCs, filesystem metadata, unique outer/inner
 IDs, root ownership, executable modes, symlinks and every app resource's readback.
 
-A Linux-generated overlay has booted and inspected storage on the test iPad using
-macOS palera1n. Linux-native USB/DFU handling remains untested.
+Linux-generated images have completed the boot, inspection and shrink checks
+above. Native Linux-host USB/DFU handling remains untested.
 
 ## Privileges and operation lifetime
 
