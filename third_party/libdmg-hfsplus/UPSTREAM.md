@@ -4,6 +4,9 @@ Source: https://github.com/planetbeing/libdmg-hfsplus
 Commit: `7ac55ec64c96f7800d9818ce64c79670e7f02b67`
 License: GPL-3.0; see LICENSE and individual file notices.
 
+Modified by Resize APFS contributors on 2026-10-25. This modified version
+remains licensed under GPL-3.0; see LICENSE and individual file notices.
+
 Local fixes:
 - Empty B-tree lookups return no record instead of interpreting the header node.
 - Freed B-tree nodes are erased.

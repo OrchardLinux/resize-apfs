@@ -1,3 +1,8 @@
+/*
+ * Modified by Resize APFS contributors on 2026-10-25:
+ * handle empty B-tree lookups and erase freed B-tree nodes.
+ * This modified version remains licensed under GPL-3.0; see ../LICENSE.
+ */
 #include <stdlib.h>
 #include <hfs/hfsplus.h>
 

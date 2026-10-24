@@ -1,3 +1,8 @@
+/*
+ * Modified by Resize APFS contributors on 2026-10-25:
+ * validate partitionless image size and declare the actual UDIF sector count.
+ * This modified version remains licensed under GPL-3.0; see ../LICENSE.
+ */
 #include <string.h>
 #include "common.h"
 #include "abstractfile.h"
