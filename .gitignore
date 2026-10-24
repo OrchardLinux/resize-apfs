@@ -1,0 +1,28 @@
+.build/
+.derivedData/
+.mock/
+.work/
+.deviceData/
+out/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+.swiftpm/
+__pycache__/
+
+# Private planning/design files, not part of the public project.
+/SPEC.md
+*.pen
+*.pen.*
+
+# Local credentials, logs and signing/build artifacts.
+.env
+.env.*
+*.log
+*.p12
+*.p8
+*.pem
+*.key
+*.mobileprovision
+*.dSYM/
+*.xcarchive/

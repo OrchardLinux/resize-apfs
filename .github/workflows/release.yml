@@ -1,0 +1,97 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Package version (private runs also create a retained draft release)
+        required: true
+        default: preview
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+      REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Plan release
+        id: plan
+        run: python3 scripts/release-plan.py
+      - name: Validate release inputs and toolchain
+        run: |
+          test -s LICENSE
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          python3 scripts/check-release.py
+          python3 -m unittest discover -s Tests/ReleaseTests
+      - name: Check retained release target
+        if: steps.plan.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.plan.outputs.release_tag }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags.txt"
+          if grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/release-tags.txt"; then
+            echo "Release $RELEASE_TAG already exists. Use its assets rather than rebuilding." >&2
+            exit 1
+          fi
+      - name: Install ldid
+        run: brew install --force-bottle ldid
+      - name: Host tests
+        run: swift test -j 2
+      - name: Build ad-hoc signed device payload
+        run: bash scripts/build-device.sh
+      - name: Package payload
+        run: bash scripts/package-release.sh "$VERSION"
+      - name: Attest public build
+        if: steps.plan.outputs.attest == 'true'
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: out/releases/*.zip
+      - name: Include attestation bundle
+        if: steps.plan.outputs.attest == 'true'
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" "out/releases/ResizeAPFS-$VERSION.zip.sigstore.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ResizeAPFS-${{ env.VERSION }}
+          path: out/releases/*
+          if-no-files-found: error
+          retention-days: 2
+      - name: Retain assets in a draft release
+        if: steps.plan.outputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.plan.outputs.release_tag }}
+          RELEASE_KIND: ${{ steps.plan.outputs.release_kind }}
+        run: |
+          options=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft
+                   --title "Resize APFS $VERSION")
+          if [[ "$RELEASE_KIND" == private-preview ]]; then
+            options+=(--prerelease --notes "Private validation build from $GITHUB_SHA. No artifact attestation was generated.")
+          else
+            options+=(--verify-tag --generate-notes)
+          fi
+          gh release create "$RELEASE_TAG" out/releases/* "${options[@]}"

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>Label</key><string>dev.omarchy.resize-apfs</string>
+    <key>ProgramArguments</key><array><string>/cores/binpack/usr/libexec/resize-helper</string></array>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ThrottleInterval</key><integer>30</integer>
+    <key>UserName</key><string>root</string>
+    <key>GroupName</key><string>wheel</string>
+    <key>ProcessType</key><string>Interactive</string>
+    <key>AbandonProcessGroup</key><true/>
+    <key>StandardOutPath</key><string>/cores/resize-helper.log</string>
+    <key>StandardErrorPath</key><string>/cores/resize-helper.err</string>
+    <key>JetsamProperties</key><dict>
+        <key>JetsamPriority</key><integer>160</integer>
+        <key>JetsamMemoryLimit</key><integer>256</integer>
+    </dict>
+</dict></plist>

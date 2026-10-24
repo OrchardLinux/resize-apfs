@@ -1,0 +1,1 @@
+module NativeSystem { header "NativeSystem.h" export * }

@@ -1,0 +1,13 @@
+{
+  "palera1n": {
+    "repository": "https://github.com/palera1n/palera1n.git",
+    "commit": "3ba32c40dbd90b9bcff1a71b5f9ee26c3388b0ad",
+    "installedBinarySHA256": "950c357b6ae5df36128f6e42a3c6d371e55aeb69a5afcde276f096276210d0c9",
+    "embeddedBinpackSHA256": "36894c6b7e00fc1f26ce980d8c8b4000cbd42c630f0a4fe2deac921f3a735294"
+  },
+  "jbinitSourceInspected": {
+    "repository": "https://github.com/palera1n/jbinit.git",
+    "commit": "df653b8a4cc30cdc3bcec65d4aff0ed7b598da22",
+    "note": "Used to understand overlay mounting, loader path, and hardcoded daemon loading. The original ramdisk and boot dylibs are not rebuilt."
+  }
+}
