@@ -34,7 +34,7 @@ USB/DFU remain unverified.
 >   from the device, then reconnect it.
 
 1. Back up your device.
-2. Download the release ZIP from [GitHub Releases](https://github.com/OrchardLinux/resize-apfs/releases/latest) and unzip it.
+2. Download the release ZIP from [GitHub Releases](https://github.com/OrchardLinux/resize-apfs/releases) and unzip it.
 3. Open Terminal in the extracted folder and run:
 
    ```sh

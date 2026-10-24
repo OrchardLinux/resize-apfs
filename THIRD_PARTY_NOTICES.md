@@ -9,7 +9,7 @@ https://github.com/HoolockLinux/docs
 
 palera1n and jbinit informed the overlay integration and private API declarations.
 palera1n is installed separately. Its boot payload is extracted and modified only
-on the user's Mac, not included in our release ZIP. The licenses of the external
+on the user's host, not included in our release ZIP. The licenses of the external
 payload's individual components remain applicable.
 https://github.com/palera1n/palera1n
 https://github.com/palera1n/jbinit
