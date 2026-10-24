@@ -63,6 +63,9 @@ for relative in files:
         if re.search(rb'(?<![A-Za-z0-9])' + re.escape(local_account) + rb'(?![A-Za-z0-9])', data, re.IGNORECASE):
             errors.append((str(relative), 'local account name'))
     for label, pattern in rules.items():
+        # Preserve upstream authors' public contact notices in vendored source.
+        if label == 'email address' and 'third_party' in relative.parts:
+            continue
         matches = re.finditer(pattern, data)
         if any(label != 'email address' or match.group() not in retina_names for match in matches):
             errors.append((str(relative), label))

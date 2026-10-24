@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Read-only audit of a generated overlay and its nested app image."""
-import argparse, hashlib, json, pathlib, plistlib, subprocess, tempfile
+import argparse, hashlib, json, pathlib, plistlib, subprocess, tempfile, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -9,6 +9,11 @@ args = parser.parse_args()
 image = args.image.resolve()
 manifest = json.loads(image.with_suffix('.json').read_text())
 assert hashlib.sha256(image.read_bytes()).hexdigest() == manifest['sha256'], 'Overlay hash mismatch'
+(ROOT/'.work').mkdir(exist_ok=True)
+if sys.platform.startswith('linux'):
+    from overlay_linux import audit
+    audit(image, manifest)
+    raise SystemExit(0)
 
 def attach(image, mount):
     subprocess.run(['hdiutil','attach','-readonly','-owners','on','-nobrowse','-mountpoint',str(mount),str(image)],check=True)

@@ -9,15 +9,15 @@ leave the released space unallocated or create an unformatted Linux partition.
 ## Requirements
 
 - A palera1n-compatible iPhone or iPad running iOS/iPadOS 16 or later.
-- An Apple Silicon Mac with Python 3 and a USB connection to the device.
-- [palera1n](https://palera.in/) installed separately and available in your PATH.
-  This initial preview accepts the exact artifact pinned in
-  `Device/upstream.lock.json`; other binaries are refused, even if their version
-  label matches.
+- Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
+- Python 3.9 or later and a USB connection to the device.
+- [palera1n](https://palera.in/) 2.4 or later, installed separately and available in
+  your PATH. Compatible overlays are checked by structure, not a version/hash whitelist.
 
 Device testing so far: iPad (6th generation, Wi-Fi / J71b), iPadOS 17.7.11,
 with a successful shrink from approximately 64 GB to 60 GB. Other devices and OS
-versions are not yet verified.
+versions are not yet verified. A Linux-generated overlay has also been booted and
+inspected successfully through macOS palera1n; native Linux USB/DFU is not yet tested.
 
 ## Use
 
@@ -46,7 +46,8 @@ versions are not yet verified.
 6. Choose **Adjust size**, enter your target, then review and confirm the changes.
 7. Wait for **Completed and verified** before restarting the device.
 
-Booting loads the utility; it does not automatically resize anything.
+Booting loads the utility; it does not automatically resize anything. On Linux,
+only starting palera1n may prompt for sudo; image preparation does not require root.
 
 ## While resizing
 
@@ -80,8 +81,8 @@ See [Device/README.md](Device/README.md) for backend, overlay and build details.
 
 ## Release builds
 
-The release workflow runs only for `v*` tags or manual requests, using one macOS
-job. Tagged builds create draft releases. Manual builds in private repositories
+The release workflow runs only for `v*` tags or manual requests. One macOS job
+builds the app; small Linux jobs build host tools and assemble the release. Tagged builds create draft releases. Manual builds in private repositories
 also retain the ZIP and checksum in a draft release; workflow artifacts expire
 after two days, but release assets do not use that expiry.
 
@@ -98,6 +99,11 @@ To build and package locally:
 ./scripts/build-device.sh
 ./scripts/package-release.sh preview
 ```
+
+For complete Linux support, also build `scripts/build-linux-tools.sh` on Linux
+x86_64 and ARM64 and collect both `out/host-tools/linux-*` directories before
+packaging with `--require-linux-tools`. Linux tools need a C compiler and zlib
+headers to build; release users receive the compiled tools and their source.
 
 Output: `out/releases/ResizeAPFS-preview.zip`. The ZIP includes only our
 payload and assembly scripts, not palera1n or an assembled overlay.

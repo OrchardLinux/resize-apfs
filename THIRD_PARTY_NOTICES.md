@@ -14,6 +14,14 @@ payload's individual components remain applicable.
 https://github.com/palera1n/palera1n
 https://github.com/palera1n/jbinit
 
+Linux host image tools use `libdmg-hfsplus` under GPL-3.0:
+https://github.com/planetbeing/libdmg-hfsplus
+
+The bundled tools run as separate programs and are not linked into the iOS app
+or helper. Complete corresponding source, the GPL license and local modification
+notes are included in `third_party/libdmg-hfsplus/`; rebuild them with
+`scripts/build-linux-tools.sh`. They dynamically use the host's libc and zlib.
+
 The following MIT notice is retained for relevant upstream material:
 
 Copyright (c) 2025 Hoolock Linux contributors

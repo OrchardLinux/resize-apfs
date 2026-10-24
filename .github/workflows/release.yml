@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Package version (private runs also create a retained draft release)
+        description: Package version (private runs retain a draft release)
         required: true
         default: preview
 permissions:
@@ -14,14 +14,16 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  build:
+  app:
     runs-on: macos-15
     timeout-minutes: 15
     permissions:
       contents: write
-      id-token: write
-      attestations: write
-      artifact-metadata: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      release_kind: ${{ steps.plan.outputs.release_kind }}
+      attest: ${{ steps.plan.outputs.attest }}
     env:
       VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
       REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
@@ -35,12 +37,11 @@ jobs:
       - name: Plan release
         id: plan
         run: python3 scripts/release-plan.py
-      - name: Validate release inputs and toolchain
+      - name: Validate source and toolchain
         run: |
           test -s LICENSE
           test -d "$DEVELOPER_DIR"
           xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
           python3 scripts/check-release.py
           python3 -m unittest discover -s Tests/ReleaseTests
       - name: Check retained release target
@@ -52,25 +53,85 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags.txt"
           if grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/release-tags.txt"; then
-            echo "Release $RELEASE_TAG already exists. Use its assets rather than rebuilding." >&2
+            echo "Release $RELEASE_TAG exists; inspect its assets before rebuilding." >&2
             exit 1
           fi
       - name: Install ldid
         run: brew install --force-bottle ldid
       - name: Host tests
         run: swift test -j 2
-      - name: Build ad-hoc signed device payload
+      - name: Build device payload
         run: bash scripts/build-device.sh
-      - name: Package payload
-        run: bash scripts/package-release.sh "$VERSION"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: device-payload
+          path: out/device/
+          retention-days: 2
+  linux-tools:
+    needs: app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x86_64
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build Linux tools
+        run: |
+          if ! test -f /usr/include/zlib.h; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends zlib1g-dev
+          fi
+          sh scripts/build-linux-tools.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-tools-${{ matrix.arch }}
+          path: out/host-tools/linux-${{ matrix.arch }}/
+          retention-days: 2
+  package:
+    needs: [app, linux-tools]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      VERSION: ${{ needs.app.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: device-payload
+          path: out/device
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linux-tools-x86_64
+          path: out/host-tools/linux-x86_64
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linux-tools-arm64
+          path: out/host-tools/linux-arm64
+      - name: Package all hosts
+        run: sh scripts/package-release.sh "$VERSION" --require-linux-tools
       - name: Attest public build
-        if: steps.plan.outputs.attest == 'true'
+        if: needs.app.outputs.attest == 'true'
         id: attest
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: out/releases/*.zip
       - name: Include attestation bundle
-        if: steps.plan.outputs.attest == 'true'
+        if: needs.app.outputs.attest == 'true'
         env:
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
         run: cp "$BUNDLE_PATH" "out/releases/ResizeAPFS-$VERSION.zip.sigstore.json"
@@ -80,12 +141,12 @@ jobs:
           path: out/releases/*
           if-no-files-found: error
           retention-days: 2
-      - name: Retain assets in a draft release
-        if: steps.plan.outputs.release_tag != ''
+      - name: Retain draft release
+        if: needs.app.outputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.plan.outputs.release_tag }}
-          RELEASE_KIND: ${{ steps.plan.outputs.release_kind }}
+          RELEASE_TAG: ${{ needs.app.outputs.release_tag }}
+          RELEASE_KIND: ${{ needs.app.outputs.release_kind }}
         run: |
           options=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft
                    --title "Resize APFS $VERSION")

@@ -1,44 +1,5 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 cd "$(dirname "$0")"
-case "${1:-}" in
-  prepare|boot) action=$1 ;;
-  *) echo 'Usage: ./resize-apfs prepare|boot'; exit 2 ;;
-esac
-[[ $(uname -s) == Darwin && $(uname -m) == arm64 ]] || { echo 'This preview requires an Apple Silicon Mac.' >&2; exit 1; }
-for tool in python3 palera1n hdiutil ditto codesign shasum; do
-  command -v "$tool" >/dev/null || { echo "Missing $tool. Install Python 3 and official palera1n separately; macOS supplies the other tools." >&2; exit 1; }
-done
-[[ -f SHA256SUMS ]] || { echo 'Use the release ZIP, not the GitHub source download. Developers: run scripts/package-release.sh first.' >&2; exit 1; }
-shasum -a 256 -c SHA256SUMS >/dev/null
-# Fail before building images if the external tool is not the inspected artifact.
-python3 - <<'PY'
-import hashlib,json,pathlib,shutil
-lock=json.loads(pathlib.Path('Device/upstream.lock.json').read_text())['palera1n']
-actual=hashlib.sha256(pathlib.Path(shutil.which('palera1n')).read_bytes()).hexdigest()
-if actual != lock['installedBinarySHA256']:
-    raise SystemExit('Unsupported palera1n binary. This preview accepts only the pinned artifact in Device/upstream.lock.json. Do not bypass this check; use a supported release or report your palera1n version and host architecture.')
-PY
-key=$(shasum -a 256 SHA256SUMS | cut -c1-16)
-overlay="$PWD/.work/release-$key.dmg"
-mkdir -p .work
-echo 'Preparing palera1n overlay...'
-log="$PWD/.work/prepare.log"
-if {
-  if [[ -f "$overlay" ]]; then
-    python3 scripts/audit-overlay.py "$overlay"
-  else
-    python3 scripts/build-overlay.py --enable-writes --output "$overlay" &&
-      python3 scripts/audit-overlay.py "$overlay"
-  fi
-} >"$log" 2>&1; then
-  echo 'Overlay ready.'
-else
-  printf 'Overlay preparation failed. Details: %s\n' "$log" >&2
-  exit 1
-fi
-[[ $action == boot ]] || exit 0
-printf '\nBoot tips:\n  Before DFU: close browsers that may use WebUSB.\n  Chrome USB settings: chrome://settings/content/usbDevices\n  Stuck at the Apple logo after palera1n starts? Briefly disconnect\n  the cable from the device and reconnect it.\n\nAfter boot: wait for iOS/iPadOS to start normally, then unlock the device.\nThe Resize APFS icon can take about a minute to appear on the Home Screen.\n\nBack up first. Booting changes jailbreak state; resizing still requires confirmation in the app.\nConnect only the intended supported device. Follow palera1n’s DFU instructions.\nStart palera1n now? Type yes: '
-read -r answer
-[[ $answer == yes ]] || { echo 'Boot cancelled. Nothing was sent to the device.'; exit 0; }
-exec ./scripts/boot-device.sh --overlay "$overlay" --boot
+command -v python3 >/dev/null || { echo 'Python 3.9 or later is required.' >&2; exit 1; }
+exec python3 scripts/launcher.py "$@"

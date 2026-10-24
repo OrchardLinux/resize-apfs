@@ -42,9 +42,10 @@ fi
 python3 - <<'PY'
 import hashlib,json,pathlib,subprocess
 root=pathlib.Path('out/device')
-files=['ResizeAPFS.app/ResizeAPFS','resize-helper','resize-overlay-entry']
+files=[p for p in root.rglob('*') if p.is_file() and p.name!='manifest.json']
 manifest={'signing':'ad-hoc','minimumOS':'16.0','architecture':'arm64',
-          'files':{f:{'sha256':hashlib.sha256((root/f).read_bytes()).hexdigest(),'bytes':(root/f).stat().st_size} for f in files}}
+          'files':{str(p.relative_to(root)):{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
+                   'bytes':p.stat().st_size,'mode':p.stat().st_mode & 0o777} for p in files}}
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print('Built device payload: out/device/')
 PY

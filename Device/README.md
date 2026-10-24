@@ -16,10 +16,9 @@ Developers need Xcode and `ldid`:
 ```
 
 Release users run `./resize-apfs prepare` or `./resize-apfs boot` from the extracted
-ZIP. palera1n must be installed separately. `upstream.lock.json` pins the supported
-external executable and its embedded binpack. The initial supported executable
-is macOS arm64, so the preview requires an Apple Silicon Mac. Unsupported binaries
-are refused.
+ZIP. palera1n 2.4+ must be installed separately. The launcher checks its version,
+overlay capability and embedded filesystem layout. `upstream.lock.json` records
+the original reference build, not a runtime whitelist.
 
 The launcher extracts that binpack locally and replaces the stock loader app with
 Resize APFS. The original boot hooks and daemon remain. The release ZIP contains
@@ -33,6 +32,17 @@ are not removed or reconfigured.
 Preparation modifies only generated image files. It does not contact a device.
 Booting requires explicit confirmation, and storage writes require a separate
 review and confirmation in the app.
+
+## Host image preparation
+
+macOS uses the system image tools. Linux uses the bundled GPL-3.0 `dmg` and
+`hfsplus` utilities; their complete source and build script accompany the ZIP.
+No filesystem mounts or root privileges are needed to prepare images on Linux.
+The backend validates UDIF geometry/CRCs, filesystem metadata, unique outer/inner
+IDs, root ownership, executable modes, symlinks and every app resource's readback.
+
+A Linux-generated overlay has booted and inspected storage on the test iPad using
+macOS palera1n. Linux-native USB/DFU handling remains untested.
 
 ## Privileges and operation lifetime
 
