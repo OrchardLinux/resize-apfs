@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 from boot_device import command
 from image_format import HFSImage, read_udif
 from palera import discover, embedded_images, executable_slice
+import launcher
 
 
 def sha(data):
@@ -185,6 +186,38 @@ class UniversalPaleraTests(unittest.TestCase):
     def test_prepare_to_boot_command_without_execution(self):
         self.prepare()
         self.assertEqual(self.boot_command(), [str(self.binary), '--rootless', '--override-overlay', str(self.output)])
+        self.execv.assert_not_called()
+
+    def test_launcher_cache_keeps_architecture_payloads_separate(self):
+        built, audited = [], []
+
+        def run(argv, **kwargs):
+            if argv[0] == str(self.binary):
+                return self.probe(argv, **kwargs)
+            script = pathlib.Path(argv[1]).name
+            if script == 'build-overlay.py':
+                self.output = pathlib.Path(argv[-1])
+                self.prepare()  # Real extraction; custom-image assembly is simulated.
+                built.append(self.output)
+            else:
+                self.assertEqual(script, 'audit-overlay.py')
+                audited.append(pathlib.Path(argv[-1]))
+            return subprocess.CompletedProcess(argv, 0)
+
+        self.probes.side_effect = run
+        with patch.object(launcher, 'ROOT', self.root), patch.object(launcher, 'verify_package', return_value=b'package checksums'), \
+                patch('launcher.sys.platform', 'darwin'), patch.object(sys, 'argv', ['resize-apfs', 'prepare']), \
+                contextlib.redirect_stdout(io.StringIO()):
+            for host in ('arm64', 'x86_64', 'arm64'):
+                with patch('palera.platform.machine', return_value=host):
+                    launcher.main()
+        self.assertEqual(len(built), 2)
+        self.assertNotEqual(built[0], built[1])
+        self.assertEqual(audited, [built[0]])
+        for host, image in zip(('arm64', 'x86_64'), built):
+            self.output = image
+            with patch('palera.platform.machine', return_value=host):
+                self.boot_command()
         self.execv.assert_not_called()
 
     def test_prepared_image_tampering_is_rejected(self):

@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import pathlib
+import platform
 import subprocess
 import sys
 
@@ -44,7 +45,9 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError('Another overlay preparation is running in this folder.')
-        key = hashlib.sha256(payload + info['installedBinarySHA256'].encode() + sys.platform.encode()).hexdigest()[:20]
+        # A universal executable can contain different payloads for each host CPU.
+        key = hashlib.sha256(payload + info['installedBinarySHA256'].encode() +
+                             sys.platform.encode() + platform.machine().encode()).hexdigest()[:20]
         overlay = work / ('release-' + key + '.dmg')
         log = work / 'prepare.log'
         print('Preparing palera1n overlay...', flush=True)
