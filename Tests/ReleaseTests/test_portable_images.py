@@ -12,16 +12,16 @@ from image_format import HFSImage, read_udif
 from palera import version_from
 
 
-def image(sectors=1, kind=0x80000005):
-    raw = b'x' * 512
+def image(sectors=1, kind=0x80000005, raw=b'x' * 512):
+    count = len(raw) // 512
     compressed = zlib.compress(raw)
     table = bytearray(284)
     table[:4] = b'mish'
-    struct.pack_into('>IQQQII', table, 4, 1, 0, 1, 0, 1, 0xfffffffe)
+    struct.pack_into('>IQQQII', table, 4, 1, 0, count, 0, count, 0xfffffffe)
     struct.pack_into('>III', table, 64, 2, 32, zlib.crc32(raw))
     struct.pack_into('>I', table, 200, 2)
-    struct.pack_into('>IIQQQQ', table, 204, kind, 0, 0, 1, 0, len(compressed))
-    struct.pack_into('>IIQQQQ', table, 244, 0xffffffff, 0, 1, 0, len(compressed), 0)
+    struct.pack_into('>IIQQQQ', table, 204, kind, 0, 0, count, 0, len(compressed))
+    struct.pack_into('>IIQQQQ', table, 244, 0xffffffff, 0, count, 0, len(compressed), 0)
     xml = plistlib.dumps({'resource-fork': {'blkx': [{'Data': bytes(table)}]}})
     footer = bytearray(512)
     footer[:4] = b'koly'
