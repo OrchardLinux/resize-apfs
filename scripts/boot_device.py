@@ -18,10 +18,11 @@ def command(image, info):
     manifest = json.loads(image.with_suffix('.json').read_text())
     require(hashlib.sha256(image.read_bytes()).hexdigest() == manifest['sha256'], 'Overlay checksum mismatch.')
     producer = manifest['palera1n']
-    if info['installedBinarySHA256'] != producer['installedBinarySHA256']:
-        expected = producer['embeddedBinpackSHA256']
-        require(sum(hashlib.sha256(data).hexdigest() == expected for data in embedded_images(info['path'])) == 1,
-                'palera1n changed its boot payload. Prepare a new overlay for the installed version.')
+    # An unchanged universal executable can select a different payload on another
+    # host architecture. Verify the selected payload even when the file hash matches.
+    expected = producer['embeddedBinpackSHA256']
+    require(sum(hashlib.sha256(data).hexdigest() == expected for data in embedded_images(info['path'])) == 1,
+            'palera1n changed its boot payload. Prepare a new overlay for the installed version.')
     result = [info['path'], *info['rootlessArguments'], '--override-overlay', str(image)]
     if sys.platform.startswith('linux') and os.geteuid() != 0:
         require(shutil.which('sudo') is not None, 'sudo is required to give palera1n USB access.')
