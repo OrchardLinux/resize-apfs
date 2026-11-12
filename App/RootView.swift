@@ -13,7 +13,7 @@ struct RootView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: roomy ? 30 : 22) {
                     header
@@ -38,14 +38,14 @@ struct RootView: View {
                 .padding(.top, 24).padding(.bottom, 24).frame(maxWidth: .infinity)
             }
             .id(pageIdentity)
-            .scrollDismissesKeyboard(.interactively)
+            .dismissKeyboardOnScrollWhenAvailable()
             .background(Palette.background)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 footer.frame(maxWidth: contentWidth).padding(.horizontal, roomy ? 36 : 20)
                     .padding(.top, 12).padding(.bottom, 16).frame(maxWidth: .infinity)
                     .background(Palette.background)
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarHidden(true)
             .toolbar {
                 ToolbarItem(placement: .keyboard) {
                     Button("Done") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
@@ -239,7 +239,7 @@ struct RootView: View {
     private var progress: some View {
         VStack(spacing: 26) {
             VStack(spacing: 16) {
-                ProgressView().controlSize(.large).tint(Palette.blue)
+                ProgressView().tint(Palette.blue)
                     .frame(width: 72, height: 72).background(Palette.blue.opacity(0.07), in: Circle())
                 Text(model.state == .reconnecting ? "Checking operation status" : (model.operation?.currentStep?.title ?? "Starting operation"))
                     .font(.largeTitle.weight(.bold)).multilineTextAlignment(.center).accessibilityIdentifier("operationHeading")

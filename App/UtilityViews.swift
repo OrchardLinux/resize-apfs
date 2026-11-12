@@ -9,7 +9,7 @@ struct MockLabView: View {
     @State private var confirmReset = false
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section {
                     Label("Synthetic storage only", systemImage: "flask").font(.headline)
@@ -53,7 +53,7 @@ struct TechnicalView: View {
     var isMock = true
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 Section("Disk") {
                     row("Name", layout.diskName)

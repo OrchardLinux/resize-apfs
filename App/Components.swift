@@ -175,3 +175,15 @@ struct SizeField: View {
         }
     }
 }
+
+// iOS 15 keeps the keyboard toolbar's explicit Done action.
+extension View {
+    @ViewBuilder
+    func dismissKeyboardOnScrollWhenAvailable() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollDismissesKeyboard(.interactively)
+        } else {
+            self
+        }
+    }
+}
