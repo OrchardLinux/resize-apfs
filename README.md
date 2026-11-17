@@ -13,11 +13,24 @@ leave the released space unallocated or create an unformatted Linux partition.
 
 ## Requirements
 
-- A palera1n-compatible iPhone or iPad running iOS/iPadOS 16 or later.
+- A palera1n-compatible iPhone or iPad running iOS/iPadOS 15 or later.
 - Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
 - Python 3.9 or later and a USB connection to the device.
-- [palera1n](https://palera.in/) 2.4 or later, installed separately and available in
-  your PATH. Compatible overlays are checked by structure, not a version/hash whitelist.
+- [palera1n 3.0.0 beta 3](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.3),
+  installed separately. It boots devices that 2.4 does not start reliably (iPad mini 4),
+  and works on those 2.4 does. Compatible overlays are checked by structure, not a
+  version/hash whitelist.
+
+  palera1n 3.0 runs in the terminal only when told to, and on macOS it comes as an app
+  rather than a command in your PATH. Before `./resize-apfs boot`, point the launcher at it:
+
+  ```sh
+  export RA1N_CLI=1
+  export PALERA1N=/Applications/palera1n.app/Contents/MacOS/palera1n  # macOS
+  ```
+
+  On Linux, `PALERA1N` is the path to the downloaded palera1n binary, or leave it unset
+  if `palera1n` is in your PATH.
 
 APFS shrinking and growing have been hardware-tested on iPad (6th generation,
 Wi-Fi / J71b), iPadOS 17.7.11. Linux-generated overlays have also been tested.
