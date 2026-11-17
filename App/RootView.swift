@@ -132,6 +132,7 @@ struct RootView: View {
                     Divider()
                     Button { model.showTechnical = true } label: {
                         HStack { Text("Technical details"); Spacer(); Image(systemName: "chevron.right") }
+                            .contentShape(Rectangle())
                     }.buttonStyle(.plain).accessibilityIdentifier("technicalDetails")
                 }
             }
