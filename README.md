@@ -32,10 +32,16 @@ leave the released space unallocated or create an unformatted Linux partition.
   On Linux, `PALERA1N` is the path to the downloaded palera1n binary, or leave it unset
   if `palera1n` is in your PATH.
 
-APFS shrinking and growing have been hardware-tested on iPad (6th generation,
-Wi-Fi / J71b), iPadOS 17.7.11. Linux-generated overlays have also been tested.
-Linux partition creation, other device/OS combinations and native Linux-host
-USB/DFU remain unverified.
+Tested on hardware:
+
+- iPad (6th generation, Wi-Fi / J71b), iPadOS 17.7.11: shrinking and growing.
+- iPhone X (GSM / d221), iOS 16.7, from a Linux host: shrinking, the released space
+  left unallocated ([#4](https://github.com/OrchardLinux/resize-apfs/issues/4)).
+- iPad mini 4 (Wi-Fi / J96), iPadOS 15.8.3, palera1n 3.0.0 beta 3 from a Linux host:
+  shrinking and creating a Linux partition
+  ([#5](https://github.com/OrchardLinux/resize-apfs/pull/5)).
+
+Other devices and iOS versions are untested.
 
 ## Use
 
@@ -45,6 +51,8 @@ USB/DFU remain unverified.
 >   USB access at `chrome://settings/content/usbDevices`.
 > - **Stuck at the Apple logo after palera1n starts?** Briefly disconnect the cable
 >   from the device, then reconnect it.
+> - **`Timed out waiting for download mode` after `Checkmate!`?** The device returns to
+>   iOS on its own. Enter DFU and run `./resize-apfs boot` again; it often takes a few tries.
 
 1. Back up your device.
 2. Download the release ZIP from [GitHub Releases](https://github.com/OrchardLinux/resize-apfs/releases) and unzip it.
