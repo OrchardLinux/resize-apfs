@@ -64,6 +64,7 @@ struct RootView: View {
                 Text(model.isSimulator ? "Apply the changes you reviewed? This simulator build changes mock storage only." : "Apply these changes to internal storage? Keep power connected and do not restart until the result is verified.")
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     private var header: some View {
@@ -239,7 +240,7 @@ struct RootView: View {
     private var progress: some View {
         VStack(spacing: 26) {
             VStack(spacing: 16) {
-                ProgressView().tint(Palette.blue)
+                ProgressView().largeWhenAvailable().tint(Palette.blue)
                     .frame(width: 72, height: 72).background(Palette.blue.opacity(0.07), in: Circle())
                 Text(model.state == .reconnecting ? "Checking operation status" : (model.operation?.currentStep?.title ?? "Starting operation"))
                     .font(.largeTitle.weight(.bold)).multilineTextAlignment(.center).accessibilityIdentifier("operationHeading")

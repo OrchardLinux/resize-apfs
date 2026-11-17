@@ -45,6 +45,7 @@ struct MockLabView: View {
             }
             .onAppear { selected = model.snapshot?.scenario ?? .normal }
         }
+        .navigationViewStyle(.stack)
     }
 }
 
@@ -84,6 +85,7 @@ struct TechnicalView: View {
             .navigationTitle("Technical details")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+        .navigationViewStyle(.stack)
     }
     private func row(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
