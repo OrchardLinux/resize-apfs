@@ -19,7 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from boot_device import command
 from image_format import HFSImage, read_udif
-from palera import discover, embedded_images, executable_slice
+from palera import discover, embedded_images, executable_slice, version_from
 import launcher
 
 
@@ -182,6 +182,15 @@ class UniversalPaleraTests(unittest.TestCase):
                                        subprocess.CompletedProcess([], 0, help_text, '')]
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
                 discover()
+
+    def test_prerelease_version_banner_is_parsed(self):
+        # palera1n 3.0.0 beta 3 (used for J96) prints this instead of a build tag.
+        banner = (':: Palera1n beta 3.0.0\n:: Copyright (C) 2026 palera1n team\n'
+                  'Palera1n beta 3.0.0 [USB: liteusb-linux]\n')
+        self.assertEqual(version_from(banner), (3, 0, 0))
+        self.probes.side_effect = [subprocess.CompletedProcess([], 0, banner, ''),
+                                   subprocess.CompletedProcess([], 0, '--rootless --override-overlay', '')]
+        self.assertEqual(discover()['rootlessArguments'], ['--rootless'])
 
     def test_prepare_to_boot_command_without_execution(self):
         self.prepare()

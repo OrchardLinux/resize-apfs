@@ -9,7 +9,7 @@ struct MockLabView: View {
     @State private var confirmReset = false
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section {
                     Label("Synthetic storage only", systemImage: "flask").font(.headline)
@@ -45,6 +45,7 @@ struct MockLabView: View {
             }
             .onAppear { selected = model.snapshot?.scenario ?? .normal }
         }
+        .navigationViewStyle(.stack)
     }
 }
 
@@ -53,7 +54,7 @@ struct TechnicalView: View {
     var isMock = true
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        NavigationStack {
+        NavigationView {
             List {
                 Section("Disk") {
                     row("Name", layout.diskName)
@@ -84,6 +85,7 @@ struct TechnicalView: View {
             .navigationTitle("Technical details")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+        .navigationViewStyle(.stack)
     }
     private func row(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {

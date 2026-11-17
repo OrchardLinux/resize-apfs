@@ -71,6 +71,8 @@ def executable_slice(data):
 def version_from(text):
     patterns = [r'Build tag:\s*v?(\d+)\.(\d+)(?:\.(\d+))?',
                 r'palera1n:\s*v?(\d+)\.(\d+)(?:\.(\d+))?',
+                # Pre-releases print "Palera1n beta 3.0.0" (the 3.0.0 beta 3 used for J96).
+                r'palera1n\s+beta\s+(\d+)\.(\d+)(?:\.(\d+))?',
                 r'palera1n\s+v?(\d+)\.(\d+)(?:\.(\d+))?']
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)

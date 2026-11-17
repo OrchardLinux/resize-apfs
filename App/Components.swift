@@ -175,3 +175,27 @@ struct SizeField: View {
         }
     }
 }
+
+// iOS 15 keeps the keyboard toolbar's explicit Done action.
+extension View {
+    @ViewBuilder
+    func dismissKeyboardOnScrollWhenAvailable() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollDismissesKeyboard(.interactively)
+        } else {
+            self
+        }
+    }
+}
+
+// The large spinner on iOS 16 and later, as before; iOS 15 keeps the regular one.
+extension View {
+    @ViewBuilder
+    func largeWhenAvailable() -> some View {
+        if #available(iOS 16.0, *) {
+            self.controlSize(.large)
+        } else {
+            self
+        }
+    }
+}

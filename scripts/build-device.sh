@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 command -v ldid >/dev/null || { echo 'ldid is required for local ad-hoc jailbreak signing.' >&2; exit 1; }
 mkdir -p out/device .work/device-build
 sdk=$(xcrun --sdk iphoneos --show-sdk-path)
-target=arm64-apple-ios16.0
+target=arm64-apple-ios15.0
 # Build unsigned; apply ad-hoc signatures after stripping debug metadata.
 xcodebuild -project ResizeAPFS.xcodeproj -scheme ResizeAPFS -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath .deviceData \
@@ -43,7 +43,7 @@ python3 - <<'PY'
 import hashlib,json,pathlib,subprocess
 root=pathlib.Path('out/device')
 files=[p for p in root.rglob('*') if p.is_file() and p.name!='manifest.json']
-manifest={'signing':'ad-hoc','minimumOS':'16.0','architecture':'arm64',
+manifest={'signing':'ad-hoc','minimumOS':'15.0','architecture':'arm64',
           'files':{str(p.relative_to(root)):{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
                    'bytes':p.stat().st_size,'mode':p.stat().st_mode & 0o777} for p in files}}
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

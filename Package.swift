@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "ResizeAPFS",
-    platforms: [.macOS(.v13), .iOS(.v16)],
+    platforms: [.macOS(.v13), .iOS(.v15)],
     products: [
         .library(name: "ResizeCore", targets: ["ResizeCore"]),
         .executable(name: "resize-mock", targets: ["ResizeMockServer"]),
