@@ -28,6 +28,35 @@ final class PlannerTests: XCTestCase {
         let plan = try Planner.make(request(before, 28_000_000_000), on: before)
         XCTAssertEqual(plan.steps, [.checking, .preparing, .expandPartition, .verifyPartition, .growAPFS, .verifyAPFS, .verifyLayout])
     }
+    func testGrowthOverApprovedPartitionsRemovesThemInTheExpansion() throws {
+        let before = StorageLayout.fixture(.linuxBlocked)
+        let linux = try XCTUnwrap(before.partitions.first { $0.kind == .linux })
+        let replace = { (ids: [UUID], bytes: Int64) in
+            PlanRequest(revision: before.revision, requestedBytes: bytes, createLinux: false, replacing: ids)
+        }
+        let plan = try Planner.make(replace([linux.id], 28_000_000_000), on: before)
+        XCTAssertEqual(plan.steps, [.checking, .preparing, .expandPartition, .verifyPartition, .growAPFS, .verifyAPFS, .verifyLayout])
+        XCTAssertFalse(plan.after.partitions.contains { $0.id == linux.id })
+        XCTAssertEqual(plan.before, before)
+        XCTAssertEqual(plan.after.containerBytes, plan.targetBytes)
+        try plan.after.validate()
+        XCTAssertEqual(plan.removalStep, .expandPartition)
+        // Shrinking or keeping the size removes them too: APFS and free space after it.
+        let shrink = try Planner.make(replace([linux.id], 20_000_000_000), on: before)
+        XCTAssertEqual(shrink.steps, [.checking, .preparing, .shrinkAPFS, .verifyAPFS, .shrinkPartition, .verifyLayout])
+        XCTAssertEqual(shrink.removalStep, .shrinkPartition)
+        XCTAssertEqual(shrink.after.partitions.count, 2)
+        let same = try Planner.make(replace([linux.id], before.containerBytes), on: before)
+        XCTAssertEqual(same.steps, [.checking, .preparing, .shrinkPartition, .verifyLayout])
+        XCTAssertEqual(same.after.partitions.count, 2)
+        // Only exactly the partitions after APFS, never with createLinux.
+        XCTAssertThrowsError(try Planner.make(replace([UUID()], 28_000_000_000), on: before))
+        XCTAssertThrowsError(try Planner.make(replace([linux.id, UUID()], 28_000_000_000), on: before))
+        XCTAssertThrowsError(try Planner.make(PlanRequest(revision: before.revision, requestedBytes: 28_000_000_000, createLinux: true, replacing: [linux.id]), on: before))
+        // Old records without the field still decode.
+        let old = try JSONDecoder().decode(PlanRequest.self, from: Data(#"{"revision":"\#(before.revision.uuidString)","requestedBytes":1,"createLinux":false}"#.utf8))
+        XCTAssertEqual(old.replacing, [])
+    }
     func testMismatchedSizesDoNotRequireAlignmentFirst() throws {
         let before = StorageLayout.fixture(.mismatch)
         let plan = try Planner.make(request(before, 28_000_000_000), on: before)

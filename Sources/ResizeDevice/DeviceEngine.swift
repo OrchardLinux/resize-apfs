@@ -162,7 +162,8 @@ public actor DeviceEngine {
                         let addition = step == .createLinux ? plan.after.partitions.first { candidate in !before.layout.partitions.contains(where: { $0.id == candidate.id }) } : nil
                         let expected = try before.gpt.changingEnd(partitionID: before.layout.backingPartitionID,
                                                                  to: step == .createLinux ? before.layout.apfs.lastLBA : plan.after.apfs.lastLBA,
-                                                                 adding: addition)
+                                                                 adding: addition,
+                                                                 removing: step == plan.removalStep ? plan.request.replacing : [])
                         guard after.gpt == expected else { throw ResizeError("The GPT worker returned, but independent readback did not match.") }
                     }
                     accept(after)

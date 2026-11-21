@@ -136,6 +136,45 @@ final class DiskBackendTests: XCTestCase {
             }
         }
     }
+    func testExpansionRemovesTheApprovedPartitionsInOneVerifiedWrite() throws {
+        for sector: Int64 in [512, 4096] {
+            try withFixture(sector) { fixture in
+                // A Linux partition after a shrunk APFS partition, as after an earlier install.
+                let start = try DeviceInspector.inspect(fixture.source)
+                let setup = try Planner.make(PlanRequest(revision: start.layout.revision, requestedBytes: fixture.containerBytes, createLinux: true), on: start.layout)
+                for step in [OperationStep.shrinkPartition, .createLinux] {
+                    let now = try DeviceInspector.inspect(fixture.source)
+                    XCTAssertEqual(DeviceWorker.execute(DeviceJob(source: fixture.source, step: step, plan: setup,
+                                                                  expectedGPT: now.gpt, expectedContainerBytes: fixture.containerBytes)).outcome, .success)
+                }
+                let before = try DeviceInspector.inspect(fixture.source)
+                let linux = try XCTUnwrap(before.layout.partitions.first { $0.kind == .linux })
+                let disk = try RawDisk(fixture.source)
+                let sentinelOffset = before.layout.apfs.firstLBA * sector + 1_048_576
+                let sentinel = try disk.read(sentinelOffset, 32)
+                var layout = before.layout
+                layout.growthSupported = true
+                let plan = try Planner.make(PlanRequest(revision: layout.revision, requestedBytes: fixture.partitionBytes,
+                                                        createLinux: false, replacing: [linux.id]), on: layout)
+                // Refused while the partitions after APFS aren't exactly the approved ones.
+                var wrong = plan
+                wrong.request.replacing = [UUID()]
+                XCTAssertEqual(DeviceWorker.execute(DeviceJob(source: fixture.source, step: .expandPartition, plan: wrong,
+                                                              expectedGPT: before.gpt, expectedContainerBytes: fixture.containerBytes)).outcome, .refused)
+                let result = DeviceWorker.execute(DeviceJob(source: fixture.source, step: .expandPartition, plan: plan,
+                                                            expectedGPT: before.gpt, expectedContainerBytes: fixture.containerBytes))
+                XCTAssertEqual(result.outcome, .success, result.message)
+                let after = try DeviceInspector.inspect(fixture.source)
+                XCTAssertEqual(after.layout.partitions.count, 2)
+                XCTAssertFalse(after.layout.partitions.contains { $0.id == linux.id })
+                XCTAssertEqual(after.layout.backingBytes, fixture.partitionBytes)
+                XCTAssertEqual(after.gpt, try before.gpt.changingEnd(partitionID: before.layout.backingPartitionID,
+                                                                     to: plan.after.apfs.lastLBA, removing: [linux.id]))
+                XCTAssertEqual(try disk.read(sentinelOffset, 32), sentinel)
+                XCTAssertEqual(after.layout.containerID, before.layout.containerID)
+            }
+        }
+    }
     func testStaleOrUnsafeWritesRefusedBeforeMutation() throws {
         try withFixture { fixture in
             let before = try DeviceInspector.inspect(fixture.source)

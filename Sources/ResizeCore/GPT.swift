@@ -160,13 +160,26 @@ public struct GPTImage: Codable, Equatable, Sendable {
 
     /// Change only an identified end boundary and/or add one new entry.
     /// All unrelated entry bytes, attributes, names, GUIDs and MBR remain untouched.
-    public func changingEnd(partitionID: UUID, to lastLBA: Int64, adding: Partition? = nil) throws -> GPTImage {
+    /// `removing`: partitions after the selected one whose entries are
+    /// cleared in the same write (approved for erasing; their data is left).
+    public func changingEnd(partitionID: UUID, to lastLBA: Int64, adding: Partition? = nil, removing: [UUID] = []) throws -> GPTImage {
         var image = self
         let parts = try partitions(diskName: "disk0")
         guard let selected = parts.first(where: { $0.id == partitionID }),
               lastLBA >= selected.firstLBA, lastLBA <= header.lastUsable,
               let index = (0..<header.entryCount).first(where: { primaryTable.gptUUID(at: $0 * 128 + 16) == partitionID })
         else { throw ResizeError("The selected partition changed or has an unsafe target.") }
+        for id in removing {
+            guard id != partitionID, let removed = parts.first(where: { $0.id == id }), removed.firstLBA > selected.lastLBA,
+                  let slot = (0..<header.entryCount).first(where: { primaryTable.gptUUID(at: $0 * 128 + 16) == id })
+            else { throw ResizeError("A partition to remove is missing or not after the selected one.") }
+            image.primaryTable.replaceSubrange((slot * 128)..<(slot * 128 + 128), with: Data(count: 128))
+        }
+        // The new end must not run into any partition that stays.
+        let staying = parts.filter { $0.id != partitionID && !removing.contains($0.id) }
+        guard !staying.contains(where: { $0.firstLBA > selected.firstLBA && $0.firstLBA <= lastLBA }) else {
+            throw ResizeError("The new boundary would overlap another partition.")
+        }
         image.primaryTable.put64(UInt64(lastLBA), at: index * 128 + 40)
         if let adding {
             guard adding.kind == .linux, adding.typeGUID.uppercased() == linuxTypeGUID,

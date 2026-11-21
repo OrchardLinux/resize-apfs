@@ -73,7 +73,15 @@ public enum DeviceWorker {
             let existing = Set(observed.layout.partitions.map(\.id))
             let addition = job.step == .createLinux ? job.plan.after.partitions.first { !existing.contains($0.id) && $0.kind == .linux } : nil
             if job.step == .createLinux && addition == nil { throw ResizeError("The reviewed Linux partition is missing or already exists.") }
-            let proposed = try observed.gpt.changingEnd(partitionID: observed.layout.backingPartitionID, to: end, adding: addition)
+            // Replacing: exactly the approved partitions still follow APFS.
+            let removing = job.step == job.plan.removalStep ? job.plan.request.replacing : []
+            if !removing.isEmpty {
+                let following = observed.layout.partitions.filter { $0.firstLBA > observed.layout.apfs.lastLBA }.map(\.id)
+                guard Set(following) == Set(removing), following.count == removing.count else {
+                    throw ResizeError("The partitions after APFS changed since they were approved. No write was attempted.")
+                }
+            }
+            let proposed = try observed.gpt.changingEnd(partitionID: observed.layout.backingPartitionID, to: end, adding: addition, removing: removing)
             let fd = raf_open_gpt_write(job.source.path, job.source.isFixture ? 1 : 0)
             guard fd >= 0 else { throw ResizeError("Cannot open the disk for the limited GPT update: \(String(cString: strerror(errno))). No write was attempted.") }
             defer { close(fd) }

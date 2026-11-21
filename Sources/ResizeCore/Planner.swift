@@ -36,8 +36,22 @@ public struct PlanRequest: Codable, Equatable, Sendable {
     public var revision: UUID
     public var requestedBytes: Int64
     public var createLinux: Bool
-    public init(revision: UUID, requestedBytes: Int64, createLinux: Bool) {
+    /// Partitions after APFS the user approved erasing: exactly all
+    /// partitions following APFS, removed in the plan's GPT write (the
+    /// expansion when growing, the partition shrink otherwise), so the plan
+    /// leaves APFS and free space after it at any size.
+    public var replacing: [UUID]
+    public init(revision: UUID, requestedBytes: Int64, createLinux: Bool, replacing: [UUID] = []) {
         self.revision = revision; self.requestedBytes = requestedBytes; self.createLinux = createLinux
+        self.replacing = replacing
+    }
+    private enum CodingKeys: String, CodingKey { case revision, requestedBytes, createLinux, replacing }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        revision = try c.decode(UUID.self, forKey: .revision)
+        requestedBytes = try c.decode(Int64.self, forKey: .requestedBytes)
+        createLinux = try c.decode(Bool.self, forKey: .createLinux)
+        replacing = try c.decodeIfPresent([UUID].self, forKey: .replacing) ?? []
     }
 }
 
@@ -49,12 +63,26 @@ public struct ResizePlan: Codable, Equatable, Identifiable, Sendable {
     public var targetBytes: Int64
     public var steps: [OperationStep]
     public var alignmentChanged: Bool { request.requestedBytes != targetBytes }
+    /// The GPT step that removes `request.replacing`.
+    public var removalStep: OperationStep? {
+        request.replacing.isEmpty ? nil : steps.first { $0 == .expandPartition || $0 == .shrinkPartition }
+    }
 }
 
 public enum Planner {
-    public static func make(_ request: PlanRequest, on layout: StorageLayout) throws -> ResizePlan {
-        try layout.validate()
-        guard request.revision == layout.revision else { throw ResizeError("Storage changed. Inspect it again before reviewing changes.") }
+    public static func make(_ request: PlanRequest, on original: StorageLayout) throws -> ResizePlan {
+        try original.validate()
+        guard request.revision == original.revision else { throw ResizeError("Storage changed. Inspect it again before reviewing changes.") }
+        // Replacing: the layout as it is without the approved partitions.
+        var layout = original
+        if !request.replacing.isEmpty {
+            let following = original.partitions.filter { $0.firstLBA > original.apfs.lastLBA }
+            guard Set(following.map(\.id)) == Set(request.replacing), following.count == request.replacing.count else {
+                throw ResizeError("The partitions after APFS are not the ones approved for erasing.")
+            }
+            guard !request.createLinux else { throw ResizeError("Replacing partitions can't be combined with creating one.") }
+            layout.partitions.removeAll { request.replacing.contains($0.id) }
+        }
         guard request.requestedBytes > 0, request.requestedBytes <= layout.maximumBytes else {
             throw ResizeError("The requested size exceeds the contiguous space available after APFS.")
         }
@@ -82,6 +110,10 @@ public enum Planner {
         if target < layout.containerBytes { steps += [.shrinkAPFS, .verifyAPFS] }
         if target > layout.containerBytes { steps += [.growAPFS, .verifyAPFS] }
         if target < layout.backingBytes { steps.append(.shrinkPartition) }
+        // Removing partitions needs a GPT write even when the partition keeps its size.
+        if !request.replacing.isEmpty && !steps.contains(.expandPartition) && !steps.contains(.shrinkPartition) {
+            steps.append(.shrinkPartition)
+        }
         if request.createLinux {
             let first = alignUp(after.apfs.lastLBA + 1, to: max(1, 32_768 / layout.sectorSize))
             let last = layout.followingBoundary
@@ -99,7 +131,7 @@ public enum Planner {
         steps.append(.verifyLayout)
         after.revision = UUID()
         try after.validate()
-        return ResizePlan(id: UUID(), request: request, before: layout, after: after,
+        return ResizePlan(id: UUID(), request: request, before: original, after: after,
                           targetBytes: target, steps: steps)
     }
 }
