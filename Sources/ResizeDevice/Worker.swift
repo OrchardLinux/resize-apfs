@@ -58,10 +58,16 @@ public enum DeviceWorker {
                 guard job.plan.targetBytes > 0, job.plan.targetBytes % 4096 == 0,
                       job.plan.targetBytes <= observed.layout.backingBytes else { throw ResizeError("Unsafe APFS target size.") }
                 mutationEntered = true
-                let status = raf_apfs_resize(observed.layout.apfs.bsdName, UInt64(job.plan.targetBytes))
+                var suggestedMinimum: Int64 = 0
+                let status = raf_apfs_resize_ex(observed.layout.apfs.bsdName, UInt64(job.plan.targetBytes), &suggestedMinimum)
+                var detail = status == 0
+                    ? "The APFS resize call returned success; readback verification is still required."
+                    : "The APFS resize call returned error \(Self.describeAPFSStatus(status)). Changes are not assumed to be undone."
+                if status != 0 && suggestedMinimum > 0 {
+                    detail += " Kernel reported minimum size: \(suggestedMinimum) bytes (\(Capacity.gb(suggestedMinimum)))."
+                }
                 return WorkerResult(jobID: job.id, outcome: status == 0 ? .success : .returnedError,
-                                    message: status == 0 ? "The APFS resize call returned success; readback verification is still required." : "The APFS resize call returned error \(status). Changes are not assumed to be undone.",
-                                    apiStatus: status)
+                                    message: detail, apiStatus: status)
             }
             guard [.expandPartition, .shrinkPartition, .createLinux].contains(job.step) else {
                 throw ResizeError("The worker does not accept this mutation step.")
@@ -110,6 +116,18 @@ public enum DeviceWorker {
         } catch {
             return WorkerResult(jobID: job.id, outcome: mutationEntered ? .unknown : .refused, message: error.localizedDescription)
         }
+    }
+
+    public static func describeAPFSStatus(_ status: Int32) -> String {
+        let unsigned = UInt32(bitPattern: status)
+        if (unsigned & 0xffff_f000) == 0x0000_c000 {
+            let posix = Int32(unsigned & 0x0fff)
+            return "\(status) (0x\(String(unsigned, radix: 16)): \(String(cString: strerror(posix))))"
+        }
+        if status > 0 && status < 256 {
+            return "\(status) (\(String(cString: strerror(status))))"
+        }
+        return "\(status) (0x\(String(unsigned, radix: 16)))"
     }
 
     public static func runFile(_ url: URL) throws {

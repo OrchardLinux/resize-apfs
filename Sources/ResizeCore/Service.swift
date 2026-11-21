@@ -11,7 +11,7 @@ public enum WorkerConfirmation {
     }
 }
 
-public struct Operation: Codable, Equatable, Identifiable, Sendable {
+public struct Operation: Codable, Equatable, Sendable {
     public var id: UUID
     public var requestID: UUID
     public var plan: ResizePlan
@@ -53,7 +53,7 @@ public struct ServiceSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public enum MockScenario: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum MockScenario: String, Codable, CaseIterable, Sendable {
     case normal, freeSpace, mismatch, linuxBlocked, longSilence, disconnect
     case resizeError, partitionError, verificationError, workerCrash, rejectedSizing, noPrivileges, invalidLayout
     public var id: String { rawValue }
@@ -91,6 +91,14 @@ public struct ScenarioRequest: Codable, Sendable {
     }
 }
 
+#if !RESIZE_IOS12_CLI
+@available(iOS 13, macOS 10.15, *)
+extension Operation: Identifiable {}
+
+@available(iOS 13, macOS 10.15, *)
+extension MockScenario: Identifiable {}
+
+@available(iOS 15, macOS 13, *)
 public protocol ResizeService: Sendable {
     func snapshot() async throws -> ServiceSnapshot
     func plan(_ request: PlanRequest) async throws -> ResizePlan
@@ -98,6 +106,7 @@ public protocol ResizeService: Sendable {
     func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot
 }
 
+@available(iOS 15, macOS 13, *)
 public struct HTTPResizeService: ResizeService {
     public let baseURL: URL
     public init(baseURL: URL = URL(string: "http://127.0.0.1:8472")!) { self.baseURL = baseURL }
@@ -130,6 +139,7 @@ public struct HTTPResizeService: ResizeService {
 }
 
 // Device builds cannot accidentally use the simulator's mock as a real disk backend.
+@available(iOS 15, macOS 13, *)
 public struct UnavailableDeviceService: ResizeService {
     public init() {}
     private var error: ResizeError { ResizeError("The on-device privileged helper is not installed. This build cannot resize real storage.") }
@@ -138,3 +148,4 @@ public struct UnavailableDeviceService: ResizeService {
     public func start(_ request: StartRequest) async throws -> ServiceSnapshot { throw error }
     public func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot { throw error }
 }
+#endif

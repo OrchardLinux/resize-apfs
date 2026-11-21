@@ -41,7 +41,7 @@ public struct PlanRequest: Codable, Equatable, Sendable {
     }
 }
 
-public struct ResizePlan: Codable, Equatable, Identifiable, Sendable {
+public struct ResizePlan: Codable, Equatable, Sendable {
     public var id: UUID
     public var request: PlanRequest
     public var before: StorageLayout
@@ -103,3 +103,8 @@ public enum Planner {
                           targetBytes: target, steps: steps)
     }
 }
+
+#if !RESIZE_IOS12_CLI
+@available(iOS 13, macOS 10.15, *)
+extension ResizePlan: Identifiable {}
+#endif

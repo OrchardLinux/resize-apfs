@@ -1,6 +1,8 @@
 #include "NativeSystem.h"
 #include <TargetConditionals.h>
+#include <sys/attr.h>
 #include <sys/ioctl.h>
+#include <sys/snapshot.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -78,6 +80,71 @@ int raf_apfs_resize(const char *bsd, uint64_t bytes) {
     int (*fn)(const char *, uint64_t) = dlsym(handle, "APFSContainerResize");
     int status = fn ? fn(bsd, bytes) : ENOSYS;
     dlclose(handle); return status;
+}
+int raf_apfs_resize_ex(const char *bsd, uint64_t bytes, int64_t *min_bytes) {
+    if (min_bytes) *min_bytes = 0;
+    void *handle = apfs(); if (!handle) return ENOTSUP;
+    int (*fn_ex)(const char *, uint64_t, uint64_t *) = dlsym(handle, "APFSContainerResizeEx");
+    int status;
+    if (fn_ex) {
+        uint64_t suggested = 0;
+        status = fn_ex(bsd, bytes, &suggested);
+        if (min_bytes && suggested > 0 && suggested <= (uint64_t)INT64_MAX) *min_bytes = (int64_t)suggested;
+    } else {
+        int (*fn)(const char *, uint64_t) = dlsym(handle, "APFSContainerResize");
+        status = fn ? fn(bsd, bytes) : ENOSYS;
+    }
+    dlclose(handle); return status;
+}
+int raf_list_snapshots(const char *mount_path, char *buffer, size_t buffer_size) {
+    if (!buffer || buffer_size == 0) return EINVAL;
+    buffer[0] = '\0';
+#if TARGET_OS_OSX || TARGET_OS_SIMULATOR
+    (void)mount_path; return 0; // Do not inspect host volumes in tests.
+#else
+    if (!mount_path || mount_path[0] != '/') return EINVAL;
+    int fd = open(mount_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return errno;
+    struct attrlist alist;
+    memset(&alist, 0, sizeof(alist));
+    alist.bitmapcount = ATTR_BIT_MAP_COUNT;
+    alist.commonattr = ATTR_CMN_NAME;
+    char raw[16384];
+    size_t used = 0;
+    int result = 0;
+    for (;;) {
+        int count = fs_snapshot_list(fd, &alist, raw, sizeof(raw), 0);
+        if (count < 0) { result = errno; break; }
+        if (count == 0) break;
+        const char *p = raw;
+        for (int i = 0; i < count; ++i) {
+            if ((size_t)(p - raw) + sizeof(uint32_t) > sizeof(raw)) { result = EIO; break; }
+            uint32_t len = 0;
+            memcpy(&len, p, sizeof(len));
+            if (len < sizeof(uint32_t) + sizeof(attrreference_t) || (size_t)(p - raw) + len > sizeof(raw)) {
+                result = EIO; break;
+            }
+            attrreference_t ref;
+            memcpy(&ref, p + sizeof(uint32_t), sizeof(ref));
+            size_t name_off = sizeof(uint32_t) + (size_t)ref.attr_dataoffset;
+            if (ref.attr_dataoffset >= 0 && name_off < len) {
+                size_t max_name = len - name_off;
+                const char *name = p + name_off;
+                size_t nlen = strnlen(name, max_name);
+                if (nlen > 0 && used + nlen + 2 <= buffer_size) {
+                    if (used > 0) buffer[used++] = '\n';
+                    memcpy(buffer + used, name, nlen);
+                    used += nlen;
+                    buffer[used] = '\0';
+                }
+            }
+            p += len;
+        }
+        if (result) break;
+    }
+    close(fd);
+    return result;
+#endif
 }
 int raf_partition_capacity(const char *bsd, uint64_t *bytes) {
 #if TARGET_OS_OSX || TARGET_OS_SIMULATOR

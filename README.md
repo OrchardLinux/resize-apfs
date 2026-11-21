@@ -13,7 +13,9 @@ leave the released space unallocated or create an unformatted Linux partition.
 
 ## Requirements
 
-- A palera1n-compatible iPhone or iPad running iOS/iPadOS 15 or later.
+- A palera1n-compatible iPhone or iPad running iOS/iPadOS 15 or later (app +
+  overlay path), **or** a checkra1n-compatible device running iOS 12.4–14
+  (rootful SSH CLI helper path; see [docs/ios12-checkra1n.md](docs/ios12-checkra1n.md)).
 - Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
 - Python 3.9 or later and a USB connection to the device.
 - [palera1n 3.0.0 beta 3](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.3),
@@ -74,6 +76,21 @@ Other devices and iOS versions are untested.
 
 Booting loads the utility; it does not automatically resize anything. On Linux,
 only starting palera1n may prompt for sudo; image preparation does not require root.
+
+### iOS 12–14 with checkra1n (rootful SSH CLI)
+
+For devices whose OS is iOS 12.4–14 under checkra1n, the same shared core and
+APFS/GPT helper can run directly as root over SSH without a palera1n overlay:
+
+```sh
+./resize-apfs checkra1n info
+./resize-apfs checkra1n deploy --host root@127.0.0.1 --port 2222
+./resize-apfs checkra1n layout --host root@127.0.0.1 --port 2222
+./resize-apfs checkra1n shrink --host root@127.0.0.1 --port 2222 --size 10
+```
+
+Add `--yes` only after reviewing the dry-run plan. See
+[docs/ios12-checkra1n.md](docs/ios12-checkra1n.md) for details.
 
 ## While resizing
 

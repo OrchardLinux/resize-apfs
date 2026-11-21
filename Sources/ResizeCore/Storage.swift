@@ -3,7 +3,7 @@ import Foundation
 public let linuxTypeGUID = "0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 public let apfsTypeGUID = "7C3457EF-0000-11AA-AA11-00306543ECAC"
 
-public struct Partition: Codable, Equatable, Identifiable, Sendable {
+public struct Partition: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable { case apfs, linux, other }
     public var id: UUID
     public var name: String
@@ -135,7 +135,17 @@ public func alignUp(_ value: Int64, to alignment: Int64) -> Int64 {
 
 public enum Capacity {
     public static func gb(_ bytes: Int64) -> String {
-        (Double(bytes) / 1_000_000_000).formatted(.number.precision(.fractionLength(0...1))) + " GB"
+        #if !RESIZE_IOS12_CLI
+        if #available(iOS 15, macOS 12, *) {
+            return (Double(bytes) / 1_000_000_000).formatted(.number.precision(.fractionLength(0...1))) + " GB"
+        }
+        #endif
+        let value = Double(bytes) / 1_000_000_000
+        let rounded = (value * 10).rounded() / 10
+        if rounded.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f GB", rounded)
+        }
+        return String(format: "%.1f GB", rounded)
     }
     public static func input(_ bytes: Int64) -> String {
         NSDecimalNumber(decimal: Decimal(bytes) / 1_000_000_000).stringValue
@@ -151,3 +161,8 @@ public enum Capacity {
         return NSDecimalNumber(decimal: bytes).int64Value
     }
 }
+
+#if !RESIZE_IOS12_CLI
+@available(iOS 13, macOS 10.15, *)
+extension Partition: Identifiable {}
+#endif

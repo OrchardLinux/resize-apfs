@@ -68,6 +68,7 @@ public enum LocalFrames {
     }
 }
 
+@available(iOS 15, macOS 13, *)
 private final class LocalSocketTransport: @unchecked Sendable {
     private let directory: URL
     private let queue = DispatchQueue(label: "resize.ipc.client", qos: .userInitiated)
@@ -124,6 +125,7 @@ private final class LocalSocketTransport: @unchecked Sendable {
     }
 }
 
+@available(iOS 15, macOS 13, *)
 public struct LocalSocketResizeService: ResizeService {
     public let directory: URL
     private let transport: LocalSocketTransport

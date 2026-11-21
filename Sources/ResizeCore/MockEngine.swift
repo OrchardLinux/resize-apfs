@@ -2,6 +2,7 @@ import Foundation
 
 /// Operates only on a JSON model. It never opens a disk or invokes storage tools.
 /// The server drives tick independently of UI connections; tests inject time.
+@available(iOS 15, macOS 13, *)
 public actor MockEngine {
     private struct Record: Codable {
         var layout: StorageLayout

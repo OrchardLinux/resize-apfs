@@ -3,6 +3,7 @@ import Darwin
 import ResizeCore
 import NativeSystem
 
+@available(iOS 15, macOS 13, *)
 public actor DeviceEngine {
     private struct Record: Codable {
         var operation: ResizeCore.Operation

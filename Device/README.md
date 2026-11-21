@@ -15,6 +15,14 @@ Developers need Xcode and `ldid`:
 ./scripts/package-release.sh preview
 ```
 
+To build only the standalone iOS 12.4+ checkra1n root CLI helper
+(`out/device/resize-helper-ios12`, sharing `ResizeCore`, `ResizeDevice`, and
+`NativeSystem`):
+
+```sh
+./scripts/build-device.sh --ios12-only
+```
+
 Release users run `./resize-apfs prepare` or `./resize-apfs boot` from the extracted
 ZIP. palera1n 2.4+ must be installed separately. The launcher checks its version,
 overlay capability and embedded filesystem layout. `upstream.lock.json` records

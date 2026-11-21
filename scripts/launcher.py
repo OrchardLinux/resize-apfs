@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from boot_device import command
+from checkra1n import DEFAULT_REMOTE_PATH, run_checkra1n_action
 from image_format import require
 from palera import discover
 
@@ -28,10 +29,21 @@ def verify_package():
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Prepare and boot Resize APFS with an external palera1n.')
-    parser.add_argument('action', choices=['prepare', 'boot'])
+    parser = argparse.ArgumentParser(description='Prepare and boot Resize APFS (palera1n iOS 15+ or checkra1n iOS 12-14).')
+    parser.add_argument('action', choices=['prepare', 'boot', 'checkra1n'])
+    parser.add_argument('checkra1n_action', nargs='?', choices=['info', 'deploy', 'layout', 'shrink'], default='info')
+    parser.add_argument('--host', help='SSH destination for checkra1n rootful mode (e.g. root@127.0.0.1)')
+    parser.add_argument('--port', type=int, default=22, help='SSH port for checkra1n mode')
+    parser.add_argument('--identity', help='SSH private key path for checkra1n mode')
+    parser.add_argument('--remote-path', default=DEFAULT_REMOTE_PATH, help='Remote helper path on device')
+    parser.add_argument('--size', help='Target APFS size for checkra1n shrink (e.g. 10 for 10 GiB or 10GB)')
+    parser.add_argument('--create-linux', action='store_true', help='Also create an unformatted Linux GPT partition')
+    parser.add_argument('--yes', action='store_true', help='Confirm execution (otherwise dry-run)')
+    parser.add_argument('--json', action='store_true', help='JSON output for checkra1n layout')
     args = parser.parse_args()
     require(sys.version_info >= (3, 9), 'Python 3.9 or later is required.')
+    if args.action == 'checkra1n':
+        raise SystemExit(run_checkra1n_action(args, ROOT))
     require(sys.platform == 'darwin' or sys.platform.startswith('linux'), 'Use Linux or macOS to prepare the overlay.')
     payload = verify_package()
     info = discover()

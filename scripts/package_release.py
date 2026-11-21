@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
     (package / 'Device').mkdir()
     for file in ['README.md', 'THIRD_PARTY_NOTICES.md', 'LICENSE', 'resize-apfs']:
         shutil.copy2(ROOT / file, package / file)
-    scripts = ['launcher.py', 'palera.py', 'boot_device.py', 'boot-device.sh', 'build-overlay.py',
+    scripts = ['launcher.py', 'palera.py', 'checkra1n.py', 'boot_device.py', 'boot-device.sh', 'build-overlay.py',
                'extract-binpack.py', 'overlay_linux.py', 'overlay_macos.py', 'image_format.py',
                'hfs-root-ownership.py', 'audit-overlay.py', 'build-linux-tools.sh']
     for script in scripts:
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
         shutil.copy2(ROOT / 'Device' / file, package / 'Device' / file)
     shutil.copytree(device, package / 'out/device')
     for relative, expected in manifest['files'].items():
-        mode = expected.get('mode', 0o755 if relative in ['ResizeAPFS.app/ResizeAPFS', 'resize-helper', 'resize-overlay-entry'] else 0o644)
+        mode = expected.get('mode', 0o755 if relative in ['ResizeAPFS.app/ResizeAPFS', 'resize-helper', 'resize-helper-ios12', 'resize-overlay-entry'] else 0o644)
         (package / 'out/device' / relative).chmod(mode)
     shutil.copytree(ROOT / 'docs/screenshots', package / 'docs/screenshots')
     shutil.copytree(ROOT / 'third_party/libdmg-hfsplus', package / 'third_party/libdmg-hfsplus')

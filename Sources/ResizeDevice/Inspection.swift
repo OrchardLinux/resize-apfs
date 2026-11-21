@@ -1,8 +1,17 @@
 import Foundation
 import Darwin
-import CryptoKit
+import CommonCrypto
 import ResizeCore
 import NativeSystem
+
+public struct VolumeSnapshots: Codable, Equatable, Sendable {
+    public var mountPoint: String
+    public var names: [String]
+    public var error: Int32?
+    public init(mountPoint: String, names: [String], error: Int32? = nil) {
+        self.mountPoint = mountPoint; self.names = names; self.error = error
+    }
+}
 
 public struct DeviceSource: Codable, Equatable, Sendable {
     public var path: String
@@ -69,11 +78,20 @@ public struct DeviceInspection: Codable, Sendable {
     public var gpt: GPTImage
     public var observedAt: Date
     public var transactionID: UInt64
+    public var minimumQueryStatus: Int32?
+    public var snapshots: [VolumeSnapshots]
+    public init(layout: StorageLayout, gpt: GPTImage, observedAt: Date, transactionID: UInt64,
+                minimumQueryStatus: Int32? = nil, snapshots: [VolumeSnapshots] = []) {
+        self.layout = layout; self.gpt = gpt; self.observedAt = observedAt; self.transactionID = transactionID
+        self.minimumQueryStatus = minimumQueryStatus; self.snapshots = snapshots
+    }
 }
 
 public enum DeviceInspector {
+    #if !RESIZE_IOS12_CLI
     /// Blocking APFS/device reads must not consume Swift cooperative-executor
     /// threads needed by the independent worker monitor and status RPCs.
+    @available(iOS 13, macOS 10.15, *)
     public static func inspectAsync(_ source: DeviceSource, queryMinimum: Bool = true) async throws -> DeviceInspection {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -82,8 +100,10 @@ public enum DeviceInspector {
             }
         }
     }
+    #endif
 
-    public static func inspect(_ source: DeviceSource, queryMinimum: Bool = true) throws -> DeviceInspection {
+    public static func inspect(_ source: DeviceSource, queryMinimum: Bool = true,
+                               allowReadOnlyMinimum: Bool = false) throws -> DeviceInspection {
         let disk = try RawDisk(source)
         let gpt = try disk.gpt()
         let parts = try gpt.partitions(diskName: "disk0")
@@ -97,14 +117,17 @@ public enum DeviceInspector {
             return try disk.read(part.firstLBA * disk.sectorSize + offset, length)
         }
         var minimum: Int64?
-        if queryMinimum && source.writesEnabled && !source.isFixture {
+        var minStatus: Int32?
+        if queryMinimum && (source.writesEnabled || allowReadOnlyMinimum) && !source.isFixture {
             var bytes: Int64 = 0
-            if raf_apfs_minimum(part.bsdName, &bytes) == 0,
+            let status = raf_apfs_minimum(part.bsdName, &bytes)
+            minStatus = status
+            if status == 0,
                bytes >= metadata.allocatedBytes, bytes > 0, bytes <= metadata.capacityBytes,
                bytes % max(4096, disk.sectorSize) == 0 { minimum = bytes }
         }
         let identity = gpt.primaryHeader + gpt.primaryTable + Data("\(metadata.containerID):\(metadata.capacityBytes)".utf8)
-        let digest = Data(SHA256.hash(data: identity))
+        let digest = sha256(identity)
         var layout = StorageLayout(revision: digest.gptUUID(at: 0)!, diskID: gpt.header.diskID,
                                    diskName: "disk0", deviceName: source.isFixture ? "Regular-file fixture" : machineName(),
                                    sectorSize: disk.sectorSize, totalBlocks: disk.totalBlocks,
@@ -114,7 +137,34 @@ public enum DeviceInspector {
                                    minimumContainerBytes: minimum, growthSupported: source.writesEnabled && !source.isFixture, issue: nil)
         try layout.validate()
         if !source.writesEnabled { layout.issue = "Inspection only. This overlay was built without storage-write permission." }
-        return DeviceInspection(layout: layout, gpt: gpt, observedAt: Date(), transactionID: metadata.transactionID)
+        let snapshots = source.isFixture ? [] : querySnapshots()
+        return DeviceInspection(layout: layout, gpt: gpt, observedAt: Date(), transactionID: metadata.transactionID,
+                                minimumQueryStatus: minStatus, snapshots: snapshots)
+    }
+
+    private static func sha256(_ data: Data) -> Data {
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &digest)
+        }
+        return Data(digest)
+    }
+
+    public static func querySnapshots(mounts: [String] = ["/", "/private/var"]) -> [VolumeSnapshots] {
+        #if os(iOS)
+        return mounts.map { mount in
+            var buf = [CChar](repeating: 0, count: 16384)
+            let status = raf_list_snapshots(mount, &buf, buf.count)
+            if status != 0 {
+                return VolumeSnapshots(mountPoint: mount, names: [], error: status)
+            }
+            let raw = String(cString: buf)
+            let names = raw.isEmpty ? [] : raw.split(separator: "\n").map(String.init)
+            return VolumeSnapshots(mountPoint: mount, names: names, error: nil)
+        }
+        #else
+        return []
+        #endif
     }
 
     private static func machineName() -> String {

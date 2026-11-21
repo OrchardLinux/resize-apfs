@@ -2,8 +2,49 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v ldid >/dev/null || { echo 'ldid is required for local ad-hoc jailbreak signing.' >&2; exit 1; }
-mkdir -p out/device .work/device-build
+ios12_only=0
+if [ "${1:-}" = "--ios12-only" ]; then
+  ios12_only=1
+fi
+mkdir -p out/device .work/device-build .work/ios12-build
 sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+
+build_ios12() {
+  local target=arm64-apple-ios12.4
+  local build="$PWD/.work/ios12-build"
+  rm -rf "$build"
+  mkdir -p "$build"
+  xcrun --sdk iphoneos clang -target "$target" -isysroot "$sdk" -Os \
+    -ISources/NativeSystem/include -c Sources/NativeSystem/NativeSystem.c -o "$build/NativeSystem.o"
+  xcrun --sdk iphoneos swiftc -target "$target" -sdk "$sdk" -swift-version 5 -O \
+    -DRESIZE_IOS12_CLI -parse-as-library -emit-library -static -emit-module \
+    -module-name ResizeCore -emit-module-path "$build/ResizeCore.swiftmodule" \
+    Sources/ResizeCore/Storage.swift Sources/ResizeCore/GPT.swift \
+    Sources/ResizeCore/APFSMetadata.swift Sources/ResizeCore/Planner.swift \
+    Sources/ResizeCore/Workflow.swift Sources/ResizeCore/Service.swift \
+    -o "$build/libResizeCore.a"
+  xcrun --sdk iphoneos swiftc -target "$target" -sdk "$sdk" -swift-version 5 -O \
+    -DRESIZE_IOS12_CLI -parse-as-library -emit-library -static -emit-module \
+    -module-name ResizeDevice -emit-module-path "$build/ResizeDevice.swiftmodule" \
+    -I "$build" -I Sources/NativeSystem/include \
+    Sources/ResizeDevice/Inspection.swift Sources/ResizeDevice/Worker.swift \
+    Sources/ResizeDevice/RuntimeEnvironment.swift Sources/ResizeDevice/CLIRunner.swift \
+    -o "$build/libResizeDevice.a"
+  xcrun --sdk iphoneos swiftc -target "$target" -sdk "$sdk" -swift-version 5 -O \
+    -DRESIZE_IOS12_CLI -I "$build" -I Sources/NativeSystem/include \
+    -L "$build" -lResizeDevice -lResizeCore "$build/NativeSystem.o" \
+    Sources/ResizeHelper/main.swift -o out/device/resize-helper-ios12
+  xcrun --sdk iphoneos strip -S out/device/resize-helper-ios12
+  ldid -SDevice/helper.entitlements.plist out/device/resize-helper-ios12
+}
+
+if [ "$ios12_only" = 1 ]; then
+  build_ios12
+  shasum -a 256 out/device/resize-helper-ios12
+  echo 'Built iOS 12 / checkra1n CLI helper: out/device/resize-helper-ios12'
+  exit 0
+fi
+
 target=arm64-apple-ios15.0
 # Build unsigned; apply ad-hoc signatures after stripping debug metadata.
 xcodebuild -project ResizeAPFS.xcodeproj -scheme ResizeAPFS -configuration Release \
@@ -36,14 +77,15 @@ codesign --force --sign - --timestamp=none --generate-entitlement-der \
 codesign --verify --deep --strict out/device/ResizeAPFS.app
 ldid -SDevice/helper.entitlements.plist out/device/resize-helper
 ldid -SDevice/helper.entitlements.plist out/device/resize-overlay-entry
+build_ios12
 if find out/device/ResizeAPFS.app -name '*.mobileprovision' | grep -q .; then
   echo 'Unexpected provisioning profile in the release payload.' >&2; exit 1
 fi
 python3 - <<'PY'
-import hashlib,json,pathlib,subprocess
+import hashlib,json,pathlib
 root=pathlib.Path('out/device')
 files=[p for p in root.rglob('*') if p.is_file() and p.name!='manifest.json']
-manifest={'signing':'ad-hoc','minimumOS':'15.0','architecture':'arm64',
+manifest={'signing':'ad-hoc','minimumOS':'15.0','ios12HelperMinimumOS':'12.4','architecture':'arm64',
           'files':{str(p.relative_to(root)):{'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
                    'bytes':p.stat().st_size,'mode':p.stat().st_mode & 0o777} for p in files}}
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

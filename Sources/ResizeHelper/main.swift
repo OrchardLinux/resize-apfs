@@ -4,6 +4,8 @@ import ResizeCore
 import ResizeDevice
 import NativeSystem
 
+#if !RESIZE_IOS12_CLI
+@available(iOS 15, macOS 13, *)
 final class HelperServer: @unchecked Sendable {
     let engine: DeviceEngine
     let socketFD: Int32
@@ -120,6 +122,7 @@ final class HelperServer: @unchecked Sendable {
         return zip(a, b).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
     }
 }
+#endif
 
 func argument(_ name: String) -> String? {
     let args = CommandLine.arguments
@@ -127,6 +130,7 @@ func argument(_ name: String) -> String? {
 }
 signal(SIGPIPE, SIG_IGN)
 do {
+    let executable = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path
     if let job = argument("--worker") {
         guard let gate = argument("--gate-fd").flatMap(Int32.init), raf_wait_for_release(gate) == 0 else {
             throw ResizeError("Worker was not released by its supervising helper; no mutation was attempted.")
@@ -135,15 +139,30 @@ do {
         try DeviceWorker.runFile(URL(fileURLWithPath: job))
         exit(0)
     }
+    let forceDaemon = CommandLine.arguments.contains("--daemon") || argument("--ipc-dir") != nil
+    let env = RuntimeEnvironment.detect(isFixture: argument("--fixture") != nil)
+    let useCLI = !forceDaemon && (CLIRunner.hasCLIFlags(CommandLine.arguments) || env.prefersCLI)
+    #if RESIZE_IOS12_CLI
+    if forceDaemon {
+        throw ResizeError("The iOS 12 / checkra1n helper build supports CLI mode only (no iOS 15+ SwiftUI IPC daemon).")
+    }
+    try CLIRunner.run(arguments: CommandLine.arguments, executable: executable)
+    exit(0)
+    #else
+    if useCLI {
+        try CLIRunner.run(arguments: CommandLine.arguments, executable: executable)
+        exit(0)
+    }
     let fixture = argument("--fixture")
     let source = DeviceSource(path: fixture ?? "/dev/disk0", fixtureSectorSize: fixture == nil ? nil : Int64(argument("--sector-size") ?? "512"),
                               writesEnabled: CommandLine.arguments.contains("--allow-writes"))
     let server = try HelperServer(source: source,
                                   stateDirectory: URL(fileURLWithPath: argument("--state-dir") ?? "/var/root/Library/ResizeAPFS"),
                                   ipcDirectory: URL(fileURLWithPath: argument("--ipc-dir") ?? "/var/run/resize-apfs"),
-                                  executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path)
-    print("Resize APFS helper: local IPC only; writes \(source.writesEnabled ? "enabled, subject to app authorization" : "disabled")")
+                                  executable: executable)
+    print("Resize APFS helper (\(env.summary)): local IPC only; writes \(source.writesEnabled ? "enabled, subject to app authorization" : "disabled")")
     server.run()
+    #endif
 } catch {
     fputs("Resize APFS helper stopped: \(error.localizedDescription)\n", stderr)
     exit(1)
