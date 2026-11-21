@@ -14,8 +14,9 @@ leave the released space unallocated or create an unformatted Linux partition.
 ## Requirements
 
 - A palera1n-compatible iPhone or iPad running iOS/iPadOS 15 or later (app +
-  overlay path), **or** a checkra1n-compatible device running iOS 12.4–14
-  (rootful SSH CLI helper path; see [docs/ios12-checkra1n.md](docs/ios12-checkra1n.md)).
+  overlay path), **or** a checkra1n-compatible device running iOS 12–14
+  (rootful SSH CLI helper path, tested on iOS 12.4; see
+  [docs/ios12-checkra1n.md](docs/ios12-checkra1n.md)).
 - Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
 - Python 3.9 or later and a USB connection to the device.
 - [palera1n 3.0.0 beta 3](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.3),
@@ -42,6 +43,10 @@ Tested on hardware:
 - iPad mini 4 (Wi-Fi / J96), iPadOS 15.8.3, palera1n 3.0.0 beta 3 from a Linux host:
   shrinking and creating a Linux partition
   ([#5](https://github.com/OrchardLinux/resize-apfs/pull/5)).
+- iPod touch 6 (iPod7,1 / N102), iOS 12.4, checkra1n 0.12.4, CLI over SSH from a macOS
+  host: shrinking 29.8 → 20 GiB after deleting and recreating the system volume's
+  `orig-fs` snapshot; stock iOS 12.4 still boots, and Orchard installed Linux into the
+  released space.
 
 Other devices and iOS versions are untested.
 
@@ -89,7 +94,12 @@ APFS/GPT helper can run directly as root over SSH without a palera1n overlay:
 ./resize-apfs checkra1n shrink --host root@127.0.0.1 --port 2222 --size 10
 ```
 
-Add `--yes` only after reviewing the dry-run plan. See
+checkra1n starts its own dropbear SSH server on port 44 on every boot (no bootstrap
+or OpenSSH needed); forward it with `iproxy 2222 44`. If the kernel's minimum size
+stays near the full container, the system volume's `orig-fs` snapshot is pinning
+it: `--snapshot-report` shows which snapshot, and `--delete-snapshot` /
+`--create-snapshot` (dry run first) remove it before the shrink and take a fresh
+one after. Add `--yes` only after reviewing the dry-run plan. See
 [docs/ios12-checkra1n.md](docs/ios12-checkra1n.md) for details.
 
 ## While resizing
