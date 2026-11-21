@@ -103,7 +103,8 @@ public enum DeviceInspector {
     #endif
 
     public static func inspect(_ source: DeviceSource, queryMinimum: Bool = true,
-                               allowReadOnlyMinimum: Bool = false) throws -> DeviceInspection {
+                               allowReadOnlyMinimum: Bool = false,
+                               readOnlyOverlayIssue: Bool = true) throws -> DeviceInspection {
         let disk = try RawDisk(source)
         let gpt = try disk.gpt()
         let parts = try gpt.partitions(diskName: "disk0")
@@ -136,7 +137,9 @@ public enum DeviceInspector {
                                    containerBytes: metadata.capacityBytes, allocatedBytes: metadata.allocatedBytes,
                                    minimumContainerBytes: minimum, growthSupported: source.writesEnabled && !source.isFixture, issue: nil)
         try layout.validate()
-        if !source.writesEnabled { layout.issue = "Inspection only. This overlay was built without storage-write permission." }
+        if !source.writesEnabled && readOnlyOverlayIssue {
+            layout.issue = "Inspection only. This overlay was built without storage-write permission."
+        }
         let snapshots = source.isFixture ? [] : querySnapshots()
         return DeviceInspection(layout: layout, gpt: gpt, observedAt: Date(), transactionID: metadata.transactionID,
                                 minimumQueryStatus: minStatus, snapshots: snapshots)

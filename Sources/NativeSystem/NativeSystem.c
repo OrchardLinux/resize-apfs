@@ -108,7 +108,8 @@ int raf_list_snapshots(const char *mount_path, char *buffer, size_t buffer_size)
     struct attrlist alist;
     memset(&alist, 0, sizeof(alist));
     alist.bitmapcount = ATTR_BIT_MAP_COUNT;
-    alist.commonattr = ATTR_CMN_NAME;
+    // fs_snapshot_list(2) follows getattrlistbulk(2) and requires ATTR_CMN_RETURNED_ATTRS.
+    alist.commonattr = ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME;
     char raw[16384];
     size_t used = 0;
     int result = 0;
@@ -121,21 +122,26 @@ int raf_list_snapshots(const char *mount_path, char *buffer, size_t buffer_size)
             if ((size_t)(p - raw) + sizeof(uint32_t) > sizeof(raw)) { result = EIO; break; }
             uint32_t len = 0;
             memcpy(&len, p, sizeof(len));
-            if (len < sizeof(uint32_t) + sizeof(attrreference_t) || (size_t)(p - raw) + len > sizeof(raw)) {
+            size_t hdr_size = sizeof(uint32_t) + sizeof(attribute_set_t);
+            if (len < hdr_size || (size_t)(p - raw) + len > sizeof(raw)) {
                 result = EIO; break;
             }
-            attrreference_t ref;
-            memcpy(&ref, p + sizeof(uint32_t), sizeof(ref));
-            size_t name_off = sizeof(uint32_t) + (size_t)ref.attr_dataoffset;
-            if (ref.attr_dataoffset >= 0 && name_off < len) {
-                size_t max_name = len - name_off;
-                const char *name = p + name_off;
-                size_t nlen = strnlen(name, max_name);
-                if (nlen > 0 && used + nlen + 2 <= buffer_size) {
-                    if (used > 0) buffer[used++] = '\n';
-                    memcpy(buffer + used, name, nlen);
-                    used += nlen;
-                    buffer[used] = '\0';
+            attribute_set_t returned;
+            memcpy(&returned, p + sizeof(uint32_t), sizeof(returned));
+            if ((returned.commonattr & ATTR_CMN_NAME) && len >= hdr_size + sizeof(attrreference_t)) {
+                attrreference_t ref;
+                memcpy(&ref, p + hdr_size, sizeof(ref));
+                if (ref.attr_dataoffset >= 0 && (size_t)ref.attr_dataoffset < len - hdr_size) {
+                    size_t name_off = hdr_size + (size_t)ref.attr_dataoffset;
+                    size_t max_name = len - name_off;
+                    const char *name = p + name_off;
+                    size_t nlen = strnlen(name, max_name);
+                    if (nlen > 0 && used + nlen + 2 <= buffer_size) {
+                        if (used > 0) buffer[used++] = '\n';
+                        memcpy(buffer + used, name, nlen);
+                        used += nlen;
+                        buffer[used] = '\0';
+                    }
                 }
             }
             p += len;
@@ -144,6 +150,32 @@ int raf_list_snapshots(const char *mount_path, char *buffer, size_t buffer_size)
     }
     close(fd);
     return result;
+#endif
+}
+int raf_delete_snapshot(const char *mount_path, const char *name) {
+#if TARGET_OS_OSX || TARGET_OS_SIMULATOR
+    (void)mount_path; (void)name; return ENOTSUP; // Never mutate host snapshots in tests.
+#else
+    if (!mount_path || mount_path[0] != '/' || !name || !name[0] || strlen(name) > 255) return EINVAL;
+    if (geteuid() != 0) return EPERM;
+    int fd = open(mount_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return errno;
+    int status = fs_snapshot_delete(fd, name, 0) == 0 ? 0 : errno;
+    close(fd);
+    return status;
+#endif
+}
+int raf_create_snapshot(const char *mount_path, const char *name) {
+#if TARGET_OS_OSX || TARGET_OS_SIMULATOR
+    (void)mount_path; (void)name; return ENOTSUP; // Never mutate host snapshots in tests.
+#else
+    if (!mount_path || mount_path[0] != '/' || !name || !name[0] || strlen(name) > 255) return EINVAL;
+    if (geteuid() != 0) return EPERM;
+    int fd = open(mount_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return errno;
+    int status = fs_snapshot_create(fd, name, 0) == 0 ? 0 : errno;
+    close(fd);
+    return status;
 #endif
 }
 int raf_partition_capacity(const char *bsd, uint64_t *bytes) {

@@ -27,8 +27,9 @@ build_ios12() {
     -DRESIZE_IOS12_CLI -parse-as-library -emit-library -static -emit-module \
     -module-name ResizeDevice -emit-module-path "$build/ResizeDevice.swiftmodule" \
     -I "$build" -I Sources/NativeSystem/include \
-    Sources/ResizeDevice/Inspection.swift Sources/ResizeDevice/Worker.swift \
-    Sources/ResizeDevice/RuntimeEnvironment.swift Sources/ResizeDevice/CLIRunner.swift \
+    Sources/ResizeDevice/Inspection.swift Sources/ResizeDevice/APFSSnapshotReport.swift \
+    Sources/ResizeDevice/Worker.swift Sources/ResizeDevice/RuntimeEnvironment.swift \
+    Sources/ResizeDevice/CLIRunner.swift \
     -o "$build/libResizeDevice.a"
   xcrun --sdk iphoneos swiftc -target "$target" -sdk "$sdk" -swift-version 5 -O \
     -DRESIZE_IOS12_CLI -I "$build" -I Sources/NativeSystem/include \

@@ -27,8 +27,13 @@ iOS 15+ (palera1n) and iOS 12.4 (checkra1n):
 - On iOS 12.4, `nx_get_minimal_size` computes the physical block tidemark of
   every APFS snapshot across all volumes in the container and caps shrinkable
   space at or above the highest snapshot block. `NativeSystem` enumerates
-  mounted volume snapshots read-only via `fs_snapshot_list` so the CLI reports
-  any snapshot pinning the minimum size.
+  mounted volume snapshots read-only via `fs_snapshot_list` (with
+  `ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_NAME`), and `--snapshot-report` parses the
+  on-disk APFS container checkpoint, volume superblocks, `snap_meta_tree`,
+  `extentref_tree`, and volume `omap` directly to report each snapshot's exact
+  block tidemark and estimated kernel floor. Guarded `--delete-snapshot` and
+  `--create-snapshot` operations are available behind explicit flags (dry-run
+  by default; `--yes` required to mutate; never automatic).
 
 ## Building
 
@@ -49,17 +54,31 @@ palera1n payload and `out/device/resize-helper-ios12`.
 3. Inspect layout, kernel minimum, and snapshots (read-only):
    ```sh
    /var/root/resize-helper-ios12 --layout
+   /var/root/resize-helper-ios12 --snapshot-report
    ```
-4. Dry-run a shrink plan (e.g. shrink iOS APFS container to 10 GiB, leaving the
+4. If an APFS snapshot (such as `orig-fs` on `/`) pins `Kernel minimum` near the
+   end of the container, inspect its tidemark and verify `root_to_xid=0` and
+   `revert_to_xid=0` with `--snapshot-report`, then dry-run and delete it before
+   shrinking:
+   ```sh
+   /var/root/resize-helper-ios12 --delete-snapshot orig-fs --volume /
+   /var/root/resize-helper-ios12 --delete-snapshot orig-fs --volume / --yes
+   ```
+5. Dry-run a shrink plan (e.g. shrink iOS APFS container to 10 GiB, leaving the
    remainder unallocated for Linux):
    ```sh
    /var/root/resize-helper-ios12 --shrink-to 10
    ```
-5. Apply with explicit confirmation:
+6. Apply with explicit confirmation:
    ```sh
    /var/root/resize-helper-ios12 --shrink-to 10 --yes
    ```
-6. Reboot iOS and confirm it still boots before installing Linux into the
+7. Optionally recreate a fresh `orig-fs` snapshot inside the shrunk container so
+   checkra1n's snapshot check stays satisfied:
+   ```sh
+   /var/root/resize-helper-ios12 --create-snapshot orig-fs --volume / --yes
+   ```
+8. Reboot iOS and confirm it still boots before installing Linux into the
    unallocated trailing space.
 
 Hardware verification on iPod touch 6 (N102, iOS 12.4, checkra1n 0.12.4) is

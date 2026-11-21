@@ -8,6 +8,9 @@ public enum CLIRunner {
         public enum Action: Equatable {
             case help
             case layout
+            case snapshotReport
+            case deleteSnapshot(String)
+            case createSnapshot(String)
             case status
             case shrink(String)
         }
@@ -16,6 +19,7 @@ public enum CLIRunner {
         public var fixturePath: String?
         public var sectorSize: Int64 = 4096
         public var stateDirectory: String = "/var/root/Library/ResizeAPFS"
+        public var volumeMount: String = "/"
         public var confirmYes: Bool = false
         public var createLinux: Bool = false
         public var allowOtherPartitions: Bool = false
@@ -38,6 +42,16 @@ public enum CLIRunner {
         var snapshots: [VolumeSnapshots]
     }
 
+    private struct SnapshotReportOutput: Codable {
+        var environment: RuntimeEnvironment
+        var kernelMinimumBytes: Int64?
+        var minimumQueryStatus: Int32?
+        var containerBytes: Int64
+        var allocatedBytes: Int64
+        var mountedSnapshots: [VolumeSnapshots]
+        var onDisk: APFSSnapshotReport
+    }
+
     private struct PlanReport: Codable {
         var environment: RuntimeEnvironment
         var dryRun: Bool
@@ -47,7 +61,10 @@ public enum CLIRunner {
     }
 
     public static func hasCLIFlags(_ args: [String]) -> Bool {
-        let flags: Set<String> = ["--layout", "--shrink-to", "--status", "--help", "-h", "--json"]
+        let flags: Set<String> = [
+            "--layout", "--snapshot-report", "--delete-snapshot", "--create-snapshot",
+            "--shrink-to", "--status", "--help", "-h", "--json"
+        ]
         return args.contains { flags.contains($0) }
     }
 
@@ -64,8 +81,12 @@ public enum CLIRunner {
             switch arg {
             case "--help", "-h": options.action = .help
             case "--layout": options.action = .layout
+            case "--snapshot-report": options.action = .snapshotReport
+            case "--delete-snapshot": options.action = .deleteSnapshot(try nextValue(arg))
+            case "--create-snapshot": options.action = .createSnapshot(try nextValue(arg))
             case "--status": options.action = .status
             case "--shrink-to": options.action = .shrink(try nextValue(arg))
+            case "--volume": options.volumeMount = try nextValue(arg)
             case "--disk": options.diskPath = try nextValue(arg)
             case "--fixture": options.fixturePath = try nextValue(arg)
             case "--sector-size":
@@ -155,12 +176,259 @@ public enum CLIRunner {
             let source = DeviceSource(path: options.fixturePath ?? options.diskPath,
                                       fixtureSectorSize: isFixture ? options.sectorSize : nil,
                                       writesEnabled: false)
-            let inspection = try DeviceInspector.inspect(source, queryMinimum: true, allowReadOnlyMinimum: true)
+            let inspection = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                         allowReadOnlyMinimum: true,
+                                                         readOnlyOverlayIssue: false)
             try printLayout(inspection, env: env, json: options.jsonOutput)
+        case .snapshotReport:
+            try runSnapshotReport(options: options, env: env, isFixture: isFixture)
+        case .deleteSnapshot(let name):
+            try runDeleteSnapshot(name: name, options: options, env: env, isFixture: isFixture)
+        case .createSnapshot(let name):
+            try runCreateSnapshot(name: name, options: options, env: env, isFixture: isFixture)
         case .shrink(let rawTarget):
             let requestedBytes = try parseTargetBytes(rawTarget)
             try runShrink(requestedBytes: requestedBytes, options: options, env: env,
                           stateDirectory: stateURL, executable: executable)
+        }
+    }
+
+    private static func captureOnDiskSnapshots(source: DeviceSource, inspection: DeviceInspection) throws -> APFSSnapshotReport {
+        let disk = try RawDisk(source)
+        let part = inspection.layout.apfs
+        let partBytes = part.blocks * disk.sectorSize
+        return try APFSSnapshotReport.capture(partitionBytes: partBytes) { offset, length in
+            guard offset >= 0, offset <= partBytes - Int64(length) else {
+                throw ResizeError("APFS metadata exceeds its backing partition.")
+            }
+            return try disk.read(part.firstLBA * disk.sectorSize + offset, length)
+        }
+    }
+
+    private static func runSnapshotReport(options: Options, env: RuntimeEnvironment, isFixture: Bool) throws {
+        let source = DeviceSource(path: options.fixturePath ?? options.diskPath,
+                                  fixtureSectorSize: isFixture ? options.sectorSize : nil,
+                                  writesEnabled: false)
+        let inspection = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                     allowReadOnlyMinimum: true,
+                                                     readOnlyOverlayIssue: false)
+        let report = try captureOnDiskSnapshots(source: source, inspection: inspection)
+        if options.jsonOutput {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let payload = SnapshotReportOutput(
+                environment: env,
+                kernelMinimumBytes: inspection.layout.minimumContainerBytes,
+                minimumQueryStatus: inspection.minimumQueryStatus,
+                containerBytes: inspection.layout.containerBytes,
+                allocatedBytes: inspection.layout.allocatedBytes,
+                mountedSnapshots: inspection.snapshots,
+                onDisk: report
+            )
+            print(String(decoding: try encoder.encode(payload), as: UTF8.self))
+            return
+        }
+        printSnapshotReport(report, inspection: inspection, env: env)
+    }
+
+    private static func runDeleteSnapshot(name: String, options: Options, env: RuntimeEnvironment, isFixture: Bool) throws {
+        guard !name.isEmpty, !name.contains("/"), name.utf8.count <= 255 else {
+            throw ResizeError("Invalid snapshot name '\(name)'.")
+        }
+        guard options.volumeMount.hasPrefix("/") else {
+            throw ResizeError("Invalid --volume mount path '\(options.volumeMount)'.")
+        }
+        guard !isFixture else {
+            throw ResizeError("Snapshot mutation is unavailable for host file fixtures.")
+        }
+        let source = DeviceSource(path: options.diskPath, fixtureSectorSize: nil, writesEnabled: false)
+        let before = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                 allowReadOnlyMinimum: true,
+                                                 readOnlyOverlayIssue: false)
+        let report = try captureOnDiskSnapshots(source: source, inspection: before)
+
+        // Match snapshot across volumes (preferring System role for "/", Data role for "/private/var").
+        let preferredRole: UInt16? = options.volumeMount == "/" ? 0x0001 : (options.volumeMount == "/private/var" ? 0x0040 : nil)
+        let matchingVol = report.volumes.first(where: { vol in
+            (preferredRole == nil || vol.role == preferredRole) && vol.snapshots.contains(where: { $0.name == name })
+        }) ?? report.volumes.first(where: { vol in vol.snapshots.contains(where: { $0.name == name }) })
+
+        guard let vol = matchingVol, let snap = vol.snapshots.first(where: { $0.name == name }) else {
+            throw ResizeError("Snapshot '\(name)' was not found in on-disk APFS snapshot metadata.")
+        }
+        if snap.isRootTo {
+            throw ResizeError("Refusing to delete snapshot '\(name)': volume '\(vol.name)' has apfs_root_to_xid=\(vol.rootToXID) pointing to it.")
+        }
+        if snap.isRevertTo {
+            throw ResizeError("Refusing to delete snapshot '\(name)': volume '\(vol.name)' has apfs_revert_to_xid=\(vol.revertToXID) pointing to it.")
+        }
+        let dryRun = !options.confirmYes
+        print(dryRun ? "=== DRY-RUN SNAPSHOT DELETE (no changes made) ===" : "=== DELETING APFS SNAPSHOT ===")
+        print("Environment     : \(env.summary)")
+        print("Mount point     : \(options.volumeMount)")
+        print("Volume          : \(vol.name) (\(vol.roleName), UUID \(vol.uuid.uuidString))")
+        print("Snapshot        : \(snap.name) (xid \(snap.xid), extentref_oid \(snap.extentrefTreeOID))")
+        print("Tidemark        : block \(snap.effectiveTidemarkBlock) (\(formatSize(snap.effectiveTidemarkBytes)))")
+        print("Safety checks   : apfs_root_to_xid=\(vol.rootToXID), apfs_revert_to_xid=\(vol.revertToXID) (clear)")
+        if let minBytes = before.layout.minimumContainerBytes {
+            print("Current minimum : \(formatSize(minBytes))")
+        }
+        if name == "orig-fs" {
+            print("Warning         : Deleting 'orig-fs' permanently removes checkra1n's 'Restore System' clean-rootfs revert target.")
+            print("                  Stock iOS 12.4 continues booting the live system volume directly (apfs_vfsop_mount fallback).")
+            print("                  After shrinking, you can recreate a fresh 'orig-fs' snapshot with --create-snapshot orig-fs --yes.")
+        }
+        if dryRun {
+            print("")
+            print("Dry-run checks PASSED. Re-run with --yes to delete snapshot '\(name)' on \(options.volumeMount).")
+            return
+        }
+        let status = raf_delete_snapshot(options.volumeMount, name)
+        guard status == 0 else {
+            throw ResizeError("fs_snapshot_delete('\(options.volumeMount)', '\(name)') failed: errno \(status) (\(String(cString: strerror(status)))).")
+        }
+        sync()
+        usleep(500_000)
+        let after = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                allowReadOnlyMinimum: true,
+                                                readOnlyOverlayIssue: false)
+        print("Deleted snapshot '\(name)' on \(options.volumeMount).")
+        if let beforeMin = before.layout.minimumContainerBytes, let afterMin = after.layout.minimumContainerBytes {
+            print("Kernel minimum  : \(formatSize(beforeMin)) -> \(formatSize(afterMin))")
+        } else if let afterMin = after.layout.minimumContainerBytes {
+            print("Kernel minimum  : \(formatSize(afterMin))")
+        }
+        let afterReport = try? captureOnDiskSnapshots(source: source, inspection: after)
+        if let afterReport {
+            print("Remaining max snapshot tidemark: block \(afterReport.maxSnapshotTidemarkBlock) (\(formatSize(afterReport.maxSnapshotTidemarkBytes)))")
+        }
+    }
+
+    private static func runCreateSnapshot(name: String, options: Options, env: RuntimeEnvironment, isFixture: Bool) throws {
+        guard !name.isEmpty, !name.contains("/"), name.utf8.count <= 255 else {
+            throw ResizeError("Invalid snapshot name '\(name)'.")
+        }
+        guard options.volumeMount.hasPrefix("/") else {
+            throw ResizeError("Invalid --volume mount path '\(options.volumeMount)'.")
+        }
+        guard !isFixture else {
+            throw ResizeError("Snapshot mutation is unavailable for host file fixtures.")
+        }
+        let source = DeviceSource(path: options.diskPath, fixtureSectorSize: nil, writesEnabled: false)
+        let before = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                 allowReadOnlyMinimum: true,
+                                                 readOnlyOverlayIssue: false)
+        let report = try captureOnDiskSnapshots(source: source, inspection: before)
+        let preferredRole: UInt16? = options.volumeMount == "/" ? 0x0001 : (options.volumeMount == "/private/var" ? 0x0040 : nil)
+        if let vol = report.volumes.first(where: { preferredRole == nil || $0.role == preferredRole }),
+           vol.snapshots.contains(where: { $0.name == name }) {
+            throw ResizeError("Snapshot '\(name)' already exists on volume '\(vol.name)'.")
+        }
+        let dryRun = !options.confirmYes
+        print(dryRun ? "=== DRY-RUN SNAPSHOT CREATE (no changes made) ===" : "=== CREATING APFS SNAPSHOT ===")
+        print("Environment     : \(env.summary)")
+        print("Mount point     : \(options.volumeMount)")
+        print("Snapshot name   : \(name)")
+        print("Container size  : \(formatSize(before.layout.containerBytes))")
+        if let minBytes = before.layout.minimumContainerBytes {
+            print("Current minimum : \(formatSize(minBytes))")
+        }
+        if dryRun {
+            print("")
+            print("Dry-run checks PASSED. Re-run with --yes to create snapshot '\(name)' on \(options.volumeMount).")
+            return
+        }
+        let status = raf_create_snapshot(options.volumeMount, name)
+        guard status == 0 else {
+            throw ResizeError("fs_snapshot_create('\(options.volumeMount)', '\(name)') failed: errno \(status) (\(String(cString: strerror(status)))).")
+        }
+        sync()
+        usleep(500_000)
+        let after = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                allowReadOnlyMinimum: true,
+                                                readOnlyOverlayIssue: false)
+        print("Created snapshot '\(name)' on \(options.volumeMount).")
+        if let afterMin = after.layout.minimumContainerBytes {
+            print("Kernel minimum  : \(formatSize(afterMin))")
+        }
+        if let afterReport = try? captureOnDiskSnapshots(source: source, inspection: after) {
+            print("Max snapshot tidemark: block \(afterReport.maxSnapshotTidemarkBlock) (\(formatSize(afterReport.maxSnapshotTidemarkBytes)))")
+        }
+    }
+
+    private static func printSnapshotReport(_ report: APFSSnapshotReport, inspection: DeviceInspection,
+                                            env: RuntimeEnvironment) {
+        let bs = report.blockSize
+        print("=== APFS Snapshot & Tidemark Report (read-only on-disk) ===")
+        print("Environment     : \(env.summary)")
+        print("Container UUID  : \(report.containerID.uuidString)")
+        print("Checkpoint XID  : \(report.transactionID)")
+        print("Container       : \(report.blockCount) blocks x \(bs) B = \(formatSize(inspection.layout.containerBytes))  (max_fs=\(report.maxFileSystems), align=\(report.alignmentBlocks) blks)")
+        print("Allocated       : \(formatSize(inspection.layout.allocatedBytes))  (free: \(formatSize(inspection.layout.freeInsideBytes)))")
+        if let minBytes = inspection.layout.minimumContainerBytes {
+            print("Kernel minimum  : \(formatSize(minBytes)) (\(minBytes / bs) blocks)")
+        } else if let st = inspection.minimumQueryStatus {
+            print("Kernel minimum  : unavailable (\(DeviceWorker.describeAPFSStatus(st)))")
+        }
+        if report.maxSnapshotTidemarkBlock > 0 {
+            let estStr = report.estimatedSnapshotMinimumBytes.map { formatSize($0) } ?? "n/a"
+            print("Max snap mark   : block \(report.maxSnapshotTidemarkBlock) (\(formatSize(report.maxSnapshotTidemarkBytes))) -> est. floor \(estStr)")
+            if let pv = report.pinningVolume, let ps = report.pinningSnapshot {
+                print("Pinning snap    : volume '\(pv)' snapshot '\(ps)'")
+            }
+        } else {
+            print("Max snap mark   : none (no snapshots reference physical blocks)")
+        }
+        print("")
+        print("Volumes (\(report.volumes.count)):")
+        for vol in report.volumes {
+            let allocBytes = Int64(vol.allocatedBlocks) * bs
+            print("  [\(vol.index)] '\(vol.name)'  role=\(vol.roleName)  oid=\(vol.fsOID)  UUID=\(vol.uuid.uuidString)")
+            print("      Allocated       : \(vol.allocatedBlocks) blocks (\(formatSize(allocBytes)))")
+            print("      Boot/Revert XID : root_to_xid=\(vol.rootToXID)  revert_to_xid=\(vol.revertToXID)  omap_recent_snap=\(vol.omapMostRecentSnapXID)")
+            if let lo = vol.liveExtentMinBlock, let hi = vol.liveExtentMaxBlock {
+                print("      Live extents    : blocks \(lo)..\(hi) (max \(formatSize(Int64(hi) * bs)))")
+            } else {
+                print("      Live extents    : empty")
+            }
+            if let sm = vol.snapshotOmapMaxBlock {
+                print("      Snap omap max   : block \(sm) (\(formatSize(Int64(sm) * bs)))")
+            }
+            if let lm = vol.liveOmapMaxBlock {
+                print("      Live omap max   : block \(lm) (\(formatSize(Int64(lm) * bs)))")
+            }
+            if vol.snapshots.isEmpty {
+                print("      Snapshots (\(vol.numSnapshots))   : none")
+            } else {
+                print("      Snapshots (\(vol.snapshots.count)):")
+                for snap in vol.snapshots {
+                    let extRange: String
+                    if let lo = snap.extentMinBlock, let hi = snap.extentMaxBlock {
+                        extRange = "\(lo)..\(hi)"
+                    } else {
+                        extRange = "none"
+                    }
+                    let nodeMaxStr = snap.treeNodeMaxBlock.map { "\($0)" } ?? "n/a"
+                    print("        - '\(snap.name)'  xid=\(snap.xid)  flags=0x\(String(snap.flags, radix: 16))  root_to=\(snap.isRootTo)  revert_to=\(snap.isRevertTo)")
+                    print("          extentref_oid=\(snap.extentrefTreeOID)  extents=\(extRange)  tree_node_max=\(nodeMaxStr) (\(snap.treeNodeCount) nodes)")
+                    print("          tidemark=block \(snap.effectiveTidemarkBlock) (\(formatSize(snap.effectiveTidemarkBytes))) -> est. min \(formatSize(snap.estimatedMinimumBytes))")
+                    if let note = snap.parseNote { print("          note: \(note)") }
+                }
+            }
+            if let note = vol.parseNote { print("      note: \(note)") }
+        }
+        if !inspection.snapshots.isEmpty {
+            print("")
+            print("Mounted VFS Snapshot Check (fs_snapshot_list):")
+            for vol in inspection.snapshots {
+                if let err = vol.error {
+                    print("  \(vol.mountPoint): query error \(err) (\(String(cString: strerror(err))))")
+                } else if vol.names.isEmpty {
+                    print("  \(vol.mountPoint): none")
+                } else {
+                    print("  \(vol.mountPoint): \(vol.names.joined(separator: ", "))")
+                }
+            }
         }
     }
 
@@ -170,10 +438,10 @@ public enum CLIRunner {
         let source = DeviceSource(path: options.fixturePath ?? options.diskPath,
                                   fixtureSectorSize: isFixture ? options.sectorSize : nil,
                                   writesEnabled: options.confirmYes)
-        let inspection = try DeviceInspector.inspect(source, queryMinimum: true, allowReadOnlyMinimum: true)
-        var layout = inspection.layout
-        // Clear read-only overlay note when computing a dry-run plan for display.
-        if !options.confirmYes { layout.issue = nil }
+        let inspection = try DeviceInspector.inspect(source, queryMinimum: true,
+                                                     allowReadOnlyMinimum: true,
+                                                     readOnlyOverlayIssue: false)
+        let layout = inspection.layout
         try validateShrinkSafety(inspection: inspection, layout: layout, requestedBytes: requestedBytes,
                                  options: options, isFixture: isFixture)
         let plan = try Planner.make(PlanRequest(revision: layout.revision,
@@ -346,7 +614,9 @@ public enum CLIRunner {
                 var detail = "Requested \(formatSize(alignedTarget)) is below the kernel's minimum container size \(formatSize(minimum))."
                 let allSnaps = inspection.snapshots.flatMap { vol in vol.names.map { "\(vol.mountPoint):\($0)" } }
                 if !allSnaps.isEmpty {
-                    detail += " Active APFS snapshots can pin the minimum size via their block tidemark: \(allSnaps.joined(separator: ", "))."
+                    detail += " Active APFS snapshots can pin the minimum size via their block tidemark: \(allSnaps.joined(separator: ", ")). Run --snapshot-report to inspect exact tidemarks."
+                } else {
+                    detail += " Run --snapshot-report to check whether an APFS snapshot pins high blocks."
                 }
                 throw ResizeError(detail)
             }
@@ -518,13 +788,17 @@ public enum CLIRunner {
 
         Modes:
           --layout                 Inspect disk0 GPT, APFS container, kernel minimum, and snapshots (read-only).
+          --snapshot-report        Read-only on-disk APFS snapshot & block tidemark report (shows what pins kernel minimum).
+          --delete-snapshot <name> Delete a named snapshot on --volume (dry-run unless --yes is passed; never automatic).
+          --create-snapshot <name> Create a named snapshot on --volume (dry-run unless --yes is passed; never automatic).
           --shrink-to <size>       Plan shrinking APFS + GPT partition to <size> (dry-run unless --yes is passed).
                                    Bare numbers are GiB (e.g. 10 = 10 GiB); suffixes GiB, GB, MiB, MB, B accepted.
           --status                 Show the last recorded operation and backup state.
           --daemon                 Run the local IPC daemon for the iOS 15+ Resize APFS app (palera1n overlay).
 
         Options:
-          --yes                    Execute the planned shrink (requires --shrink-to).
+          --yes                    Execute the planned shrink or snapshot operation (required for any write).
+          --volume <mount>         Mount point for --delete-snapshot / --create-snapshot (default: /).
           --create-linux           Also create an unformatted Linux GPT partition in the freed space.
           --min-free-mib <MiB>     Minimum free headroom kept inside APFS (default: 512).
           --allow-other-partitions Permit shrinking when non-APFS partitions precede APFS on disk0.

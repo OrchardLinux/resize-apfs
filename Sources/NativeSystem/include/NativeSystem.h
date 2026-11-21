@@ -10,6 +10,8 @@ int raf_apfs_minimum(const char *bsd, int64_t *bytes);
 int raf_apfs_resize(const char *bsd, uint64_t bytes);
 int raf_apfs_resize_ex(const char *bsd, uint64_t bytes, int64_t *min_bytes);
 int raf_list_snapshots(const char *mount_path, char *buffer, size_t buffer_size);
+int raf_delete_snapshot(const char *mount_path, const char *name);
+int raf_create_snapshot(const char *mount_path, const char *name);
 int raf_partition_capacity(const char *bsd, uint64_t *bytes);
 int raf_spawn_worker(const char *executable, const char *job, pid_t *pid, int *release_fd);
 int raf_release_worker(int fd);
