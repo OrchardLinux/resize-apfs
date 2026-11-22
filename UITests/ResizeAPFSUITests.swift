@@ -49,7 +49,8 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertTrue(app.buttons["applyChanges"].waitForExistence(timeout: 5))
         app.buttons["applyChanges"].coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).tap()
         XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 3))
-        app.alerts.firstMatch.buttons.matching(identifier: "confirmStart").firstMatch.tap()
+        // UIAlertController actions carry no accessibility identifier; the label is fixed.
+        app.alerts.firstMatch.buttons["Start resize"].tap()
     }
 
     func testShrinkCreateLinuxAndReopenWhileRunning() throws {
@@ -102,7 +103,9 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Space after APFS"].exists)
         app.buttons["reviewChanges"].tap()
         XCTAssertTrue(app.buttons["applyChanges"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["No Linux partition will be created. Any remaining space stays unallocated."].exists)
+        // No free space left: the plan grows APFS into all of it, without a Linux partition.
+        XCTAssertTrue(app.staticTexts["APFS grows into the unallocated space after it."].exists)
+        XCTAssertFalse(app.staticTexts["Linux · unformatted"].exists)
     }
 
     func testHeartbeatRemainsFreshDuringLongResize() throws {
