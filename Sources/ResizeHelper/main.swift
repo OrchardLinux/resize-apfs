@@ -13,9 +13,12 @@ final class HelperServer: @unchecked Sendable {
     let mobileGID: gid_t
     let ipcDirectory: URL
     let expectedUIPath: String
+    let sessionApp: Bool
     let clients = DispatchSemaphore(value: 8)
 
-    init(source: DeviceSource, stateDirectory: URL, ipcDirectory: URL, executable: String) throws {
+    /// `uiPath`: the checkra1n session's app executable (already validated by
+    /// SessionTrust); nil serves only the palera1n overlay's app, as before.
+    init(source: DeviceSource, stateDirectory: URL, ipcDirectory: URL, executable: String, uiPath: String? = nil) throws {
         #if os(iOS)
         guard geteuid() == 0, !source.isFixture else { throw ResizeError("The device helper must run as root and cannot use fixture mode.") }
         mobileUID = getpwnam("mobile")?.pointee.pw_uid ?? 501
@@ -25,7 +28,8 @@ final class HelperServer: @unchecked Sendable {
         mobileUID = geteuid(); mobileGID = getegid()
         #endif
         self.ipcDirectory = ipcDirectory
-        expectedUIPath = URL(fileURLWithPath: "/cores/binpack/Applications/palera1nLoader.app/ResizeAPFS").resolvingSymlinksInPath().path
+        expectedUIPath = uiPath ?? URL(fileURLWithPath: "/cores/binpack/Applications/palera1nLoader.app/ResizeAPFS").resolvingSymlinksInPath().path
+        sessionApp = uiPath != nil
         try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         lockFD = open(stateDirectory.appendingPathComponent("helper.lock").path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) == 0 else { throw ResizeError("Another helper owns the operation journal.") }
@@ -76,7 +80,8 @@ final class HelperServer: @unchecked Sendable {
                     guard raf_peer_uid(fd, &uid) == 0, uid == mobileUID || uid == 0 else { throw ResizeError("Local caller identity is not permitted.") }
                     #if os(iOS)
                     guard uid == 0 || raf_peer_is_executable(fd, expectedUIPath) == 1 else {
-                        throw ResizeError("Only the Resize APFS app from the read-only overlay may use this helper.")
+                        throw ResizeError(sessionApp ? "Only this session's Resize APFS app may use this helper."
+                                                     : "Only the Resize APFS app from the read-only overlay may use this helper.")
                     }
                     #endif
                     // Authenticate the peer executable once per connection. Reuse
@@ -118,6 +123,11 @@ final class HelperServer: @unchecked Sendable {
     }
 }
 
+#if os(iOS)
+let isDevice = true
+#else
+let isDevice = false
+#endif
 func argument(_ name: String) -> String? {
     let args = CommandLine.arguments
     return args.firstIndex(of: name).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
@@ -132,13 +142,32 @@ do {
         try DeviceWorker.runFile(URL(fileURLWithPath: job))
         exit(0)
     }
+    let stateDirectory = URL(fileURLWithPath: argument("--state-dir") ?? "/var/root/Library/ResizeAPFS")
+    // iOS 12-14 session commands (scripts/checkra1n_route.py, Device/README.md).
+    if let app = argument("--register-app") {
+        try AppRegistration.register(app)
+        exit(0)
+    }
+    if let app = argument("--unregister-app") {
+        try AppRegistration.unregister(app)
+        exit(0)
+    }
+    if CommandLine.arguments.contains("--operation-active") {
+        exit(DeviceEngine.operationActive(directory: stateDirectory) ? 0 : 1)
+    }
+    let session = CommandLine.arguments.contains("--session")
+    let uiPath = argument("--ui-path")
+    guard session == (uiPath != nil) || !isDevice else {
+        throw ResizeError("--session and --ui-path belong together: a session serves exactly the app it names.")
+    }
     let fixture = argument("--fixture")
     let source = DeviceSource(path: fixture ?? "/dev/disk0", fixtureSectorSize: fixture == nil ? nil : Int64(argument("--sector-size") ?? "512"),
                               writesEnabled: CommandLine.arguments.contains("--allow-writes"))
     let server = try HelperServer(source: source,
-                                  stateDirectory: URL(fileURLWithPath: argument("--state-dir") ?? "/var/root/Library/ResizeAPFS"),
+                                  stateDirectory: stateDirectory,
                                   ipcDirectory: URL(fileURLWithPath: argument("--ipc-dir") ?? "/var/run/resize-apfs"),
-                                  executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path)
+                                  executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path,
+                                  uiPath: try uiPath.map(SessionTrust.validatedUIPath))
     print("Resize APFS helper: local IPC only; writes \(source.writesEnabled ? "enabled, subject to app authorization" : "disabled")")
     server.run()
 } catch {

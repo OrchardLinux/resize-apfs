@@ -35,6 +35,7 @@ final class HeartbeatTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         let operation = try XCTUnwrap(first?.operation)
+        XCTAssertTrue(DeviceEngine.operationActive(directory: directory.appendingPathComponent("state")))
         let initialConfirmation = try XCTUnwrap(operation.lastConfirmedAt)
         var confirmations = Set<Date>()
         for _ in 0..<5 {
@@ -55,6 +56,7 @@ final class HeartbeatTests: XCTestCase {
             final = try engine.snapshot()
         }
         XCTAssertEqual(final.operation?.status, .unknown) // No report is not success.
+        XCTAssertFalse(DeviceEngine.operationActive(directory: directory.appendingPathComponent("state")))
         XCTAssertNil(final.operation?.workerPID)
         XCTAssertEqual(try DeviceInspector.inspect(fixture.source).layout.backingBytes, initial.layout.backingBytes)
     }
