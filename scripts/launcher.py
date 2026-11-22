@@ -9,6 +9,7 @@ import platform
 import subprocess
 import sys
 
+import boot_run
 import tools as pinned
 from boot_device import command
 from image_format import require
@@ -98,9 +99,8 @@ def main():
         require(result.returncode == 0, 'Overlay preparation failed. Details: ' + str(log))
     if args.action == 'prepare':
         return
-    argv = command(overlay, discover(str(palera1n)))
-    print('After the boot, unlock the device: Resize APFS appears on the Home Screen within a minute.', flush=True)
-    os.execv(argv[0], argv)
+    boot_run.run(command(overlay, discover(str(palera1n))), work / 'palera1n.log')
+    print('Done. Unlock the device: Resize APFS appears on the Home Screen within a minute.')
 
 
 if __name__ == '__main__':

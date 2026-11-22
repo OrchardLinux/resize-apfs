@@ -59,7 +59,8 @@ Other devices and iOS versions are untested.
 
    The launcher asks which iOS version the device runs (Settings > General > About;
    `--ios 15` or `--ios 12` skips the question), downloads palera1n or checkra1n,
-   and asks before starting the boot process. Follow the prompts to enter DFU mode.
+   and starts it. Put the device in DFU mode when asked. The tool's own output goes
+   to `.work/palera1n.log` or `.work/checkra1n.log`, shown only if the boot fails.
 
    On iOS 12 to 14 the launcher then copies Resize APFS to the device over the USB
    cable. When you are done in the app, press Enter in the terminal and it removes

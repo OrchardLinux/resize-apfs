@@ -23,6 +23,7 @@ import sys
 import tempfile
 import time
 
+import boot_run
 import usbmux
 from image_format import require
 
@@ -161,8 +162,9 @@ def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic):
 
 def run(executable, ask=input):
     app, helper = payload()
-    result = subprocess.run(checkra1n_command(executable))
-    require(result.returncode == 0, 'checkra1n did not finish. Put the device in DFU mode and try again.')
+    work = ROOT / '.work'
+    work.mkdir(exist_ok=True, mode=0o700)
+    boot_run.run(checkra1n_command(executable), work / 'checkra1n.log')
     wait_for_ssh()
     # A short folder: the SSH control socket's path must stay under 104 bytes.
     with tempfile.TemporaryDirectory(prefix='resize-apfs-', dir='/tmp') as work:

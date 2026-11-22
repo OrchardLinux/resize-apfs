@@ -15,6 +15,7 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 
+import boot_run  # noqa: E402
 import checkra1n_route  # noqa: E402
 import launcher  # noqa: E402
 import tools  # noqa: E402
@@ -103,6 +104,34 @@ class VersionChoiceTests(unittest.TestCase):
             launcher.ios_version(11)
         with mock.patch('builtins.input', return_value='3'), mock.patch('sys.stdout', io.StringIO()), self.assertRaises(ValueError):
             launcher.ios_version(None)
+
+
+class BootRunTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.log = pathlib.Path(self.temporary.name) / 'tool.log'
+
+    def run_tool(self, script, **kwargs):
+        with mock.patch('sys.stdout', io.StringIO()) as out:
+            try:
+                boot_run.run(['sh', '-c', script], self.log, **kwargs)
+            finally:
+                self.out = out.getvalue()
+
+    def test_the_tools_output_goes_to_the_log_and_the_hint_to_the_terminal(self):
+        self.run_tool('echo ":: Palera1n banner"; echo "Booting..."')
+        self.assertIn('Booting...', self.log.read_text())
+        self.assertNotIn('banner', self.out)
+        self.assertIn('reconnect the cable at the device', self.out)
+
+    def test_a_failure_shows_the_end_of_the_log(self):
+        with self.assertRaisesRegex(ValueError, '(?s)did not boot.*Timed out waiting for download mode.*tool.log'):
+            self.run_tool('echo noise; echo "Timed out waiting for download mode"; exit 1')
+
+    def test_a_tool_that_never_finishes_is_stopped_with_its_children(self):
+        with self.assertRaisesRegex(ValueError, 'No device booted'):
+            self.run_tool('sleep 30 & wait', timeout=1)
 
 
 class OverlayReuseTests(unittest.TestCase):
