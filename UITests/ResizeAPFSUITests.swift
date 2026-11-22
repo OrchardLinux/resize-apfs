@@ -114,6 +114,35 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["Linux · unformatted"].exists)
     }
 
+    func testRemoveSnapshotFromTheEditorThenTakeANewOne() throws {
+        try reset("snapshot")
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["removeSnapshot"].waitForExistence(timeout: 15), "the overview offers the removal")
+        app.buttons["adjustSize"].coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).tap()
+        XCTAssertTrue(app.textFields["targetSize"].waitForExistence(timeout: 5))
+        enterSize("24", app: app)
+        XCTAssertTrue(app.staticTexts["sizeValidation"].waitForExistence(timeout: 3), "24 GB is below the minimum while orig-fs exists")
+        XCTAssertFalse(app.buttons["reviewChanges"].isEnabled)
+        app.buttons["removeSnapshot"].tap()
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 3))
+        app.alerts.firstMatch.buttons["Remove"].tap()
+        // Still in the editor, same size, now allowed.
+        let deadline = Date().addingTimeInterval(8)
+        while app.staticTexts["sizeValidation"].exists && Date() < deadline { Thread.sleep(forTimeInterval: 0.3) }
+        XCTAssertFalse(app.staticTexts["sizeValidation"].exists)
+        XCTAssertEqual(app.textFields["targetSize"].value as? String, "24")
+        XCTAssertFalse(app.buttons["removeSnapshot"].exists)
+        XCTAssertFalse(app.staticTexts["serviceError"].exists, "the removal is the user's own change, not \"Storage changed\"")
+        XCTAssertTrue(app.buttons["reviewChanges"].isEnabled)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["takeSnapshot"].waitForExistence(timeout: 5))
+        app.buttons["takeSnapshot"].tap()
+        // The legend row reads out as one element: "Held by snapshot orig-fs".
+        XCTAssertTrue(app.descendants(matching: .any)["Held by snapshot orig-fs"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["takeSnapshot"].exists)
+    }
+
     func testHeartbeatRemainsFreshDuringLongResize() throws {
         try reset("longSilence", scale: 0.4)
         let app = XCUIApplication()

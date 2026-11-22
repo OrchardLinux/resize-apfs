@@ -137,6 +137,9 @@ public struct LocalSocketResizeService: ResizeService {
         completion(.failure(ResizeError("Mock configuration is not available on a device.")))
     }
 
+    public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { call("removeSnapshot", encoding: request, completion: completion) }
+    public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { call("takeSnapshot", encoding: request, completion: completion) }
+
     private func call<T: Decodable, B: Encodable>(_ method: String, encoding body: B, completion: @escaping ServiceCompletion<T>) {
         let data: Data
         do { data = try JSONEncoder().encode(body) } catch { completion(.failure(error)); return }

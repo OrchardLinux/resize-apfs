@@ -160,11 +160,15 @@ struct Pages {
         let capacities: UIView = layout.containerBytes != layout.backingBytes
             ? stack(.horizontal, 32, [capacity("APFS container", layout.containerBytes), capacity("Backing partition", layout.backingBytes), spacer()], align: .top)
             : capacity("Capacity", layout.containerBytes)
-        let held: Int64 = 0  // The removable snapshot's share; see the snapshot feature.
+        let system = layout.systemSnapshot
+        let held = system.flatMap { $0.present ? $0.heldBytes : nil }.map { min(max(0, $0), layout.allocatedBytes) } ?? 0
         let used = max(0, layout.allocatedBytes - held)
         let usage = UsageBar(total: layout.containerBytes, parts: [(used, Theme.blue), (held, Theme.snapshot)])
         var legend: [UIView] = [LegendRow(m, swatch: Theme.blue, title: "Used by \(osName)", value: Capacity.gb(used))]
-        if held > 0 { legend.append(LegendRow(m, swatch: Theme.snapshot, title: "Held by snapshot orig-fs", value: Capacity.gb(held))) }
+        if let system, system.present, system.removable {
+            legend.append(LegendRow(m, swatch: held > 0 ? Theme.snapshot : nil, title: "Held by snapshot \(system.name)",
+                                    value: system.heldBytes == nil ? "Present" : Capacity.gb(held), indent: held == 0))
+        }
         legend.append(LegendRow(m, swatch: Theme.track, title: "Free", value: Capacity.gb(layout.freeInsideBytes)))
         legend.append(LegendRow(m, swatch: nil, title: "Adjacent unallocated space", value: Capacity.gb(layout.adjacentFreeBytes), indent: true,
                                 valueIdentifier: "Adjacent unallocated spaceValue"))
@@ -181,7 +185,50 @@ struct Pages {
         NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: details.leadingAnchor), row.trailingAnchor.constraint(equalTo: details.trailingAnchor),
                                      row.topAnchor.constraint(equalTo: details.topAnchor, constant: 4), row.bottomAnchor.constraint(equalTo: details.bottomAnchor, constant: -4)])
         details.addAction { [weak root] in root?.showTechnical() }
-        return Card(m, spacing: 16, [top, capacities, usage, stack(.vertical, 10, legend), rule, details])
+        var figures: [UIView] = [top, capacities, usage, stack(.vertical, 10, legend)]
+        if let offer = snapshotOffer(layout, editor: false) { figures.append(offer) }
+        figures.append(rule)
+        if let system, !system.present {
+            figures.append(cardAction("Take a new \(system.name) snapshot…", color: Theme.blue, identifier: "takeSnapshot") { [model] in model.takeSnapshot() })
+        }
+        return Card(m, spacing: 16, figures + [details])
+    }
+
+    /// The yellow offer to remove the system snapshot, in the overview and the editor.
+    func snapshotOffer(_ layout: StorageLayout, editor: Bool) -> UIView? {
+        // A snapshot known to hold nothing (just taken) is not worth an offer.
+        guard let system = layout.systemSnapshot, system.present, system.removable, system.heldBytes != 0 else { return nil }
+        let held = system.heldBytes.flatMap { $0 > 0 ? Capacity.gb($0) : nil }
+        let restore = "checkra1n’s Restore System stops working until a new snapshot is taken."
+        let title: String, detail: String
+        if editor {
+            title = held.map { "Claim \($0) more" } ?? "Claim more space"
+            let floor = layout.minimumContainerBytes.map { "The snapshot \(system.name) keeps iOS from shrinking below \(Capacity.gb($0)). " } ?? "The snapshot \(system.name) keeps iOS from shrinking further. "
+            detail = floor + (held.map { "Removing it lets iOS shrink \($0) further. " } ?? "Removing it lets iOS shrink further. ") + restore
+        } else {
+            title = held.map { "Snapshot \(system.name) holds \($0)" } ?? "Snapshot \(system.name) holds space"
+            detail = (held.map { "Removing it lets iOS shrink \($0) further. " } ?? "Removing it lets iOS shrink further. ") + restore
+        }
+        return WarningBox(m, icon: .history, title: title, paragraphs: [detail],
+                          action: (title: "Remove snapshot…", identifier: "removeSnapshot", run: { [weak root] in root?.confirmRemoveSnapshot() }, enabled: !model.busy))
+    }
+
+    /// A full-width row in a card that runs an action, like "Technical details".
+    private func cardAction(_ title: String, color: UIColor, identifier: String, action: @escaping () -> Void) -> UIView {
+        let button = UIButton(type: .system)
+        button.contentHorizontalAlignment = .fill
+        button.accessibilityIdentifier = identifier
+        button.accessibilityLabel = title
+        button.isEnabled = !model.busy
+        let row = stack(.horizontal, 8, [label(title, Theme.font(m.row + 1), model.busy ? Theme.faint : color), spacer(),
+                                         Icon.chevronRight.view(17, color: model.busy ? Theme.faint : color)], align: .center)
+        row.isUserInteractionEnabled = false
+        row.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(row)
+        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: button.leadingAnchor), row.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+                                     row.topAnchor.constraint(equalTo: button.topAnchor, constant: 4), row.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -4)])
+        button.addAction(action)
+        return button
     }
 
     // MARK: Review

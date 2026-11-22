@@ -22,6 +22,7 @@ enum Theme {
     static let disabledFill = UIColor(hex: 0xE2E7EE)
     static let warningFill = UIColor(hex: 0xFFF4DF)
     static let warningInk = UIColor(hex: 0x805012)
+    static let warningBorder = UIColor(hex: 0xF2D49B)
     /// The part of APFS held by a removable snapshot: the allocated blue, half strength.
     static let snapshot = UIColor(hex: 0x2563EB).withAlphaComponent(0.45)
 
@@ -72,7 +73,7 @@ extension UIColor {
 /// Line icons on a 24-point grid, drawn as template images.
 enum Icon {
     case chevronLeft, chevronRight, arrowRight, check, checkCircle, circle, circleDot, square, squareCheck
-    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle
+    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, history
 
     func image(_ size: CGFloat = 20, lineWidth: CGFloat = 2) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
@@ -129,6 +130,11 @@ enum Icon {
                 let shackle = UIBezierPath(); shackle.move(to: CGPoint(x: 8, y: 11)); shackle.addLine(to: CGPoint(x: 8, y: 7))
                 shackle.addArc(withCenter: CGPoint(x: 12, y: 7), radius: 4, startAngle: .pi, endAngle: 0, clockwise: true); shackle.addLine(to: CGPoint(x: 16, y: 11))
                 stroke(shackle)
+            case .history:
+                let arc = UIBezierPath(arcCenter: CGPoint(x: 12, y: 12), radius: 9, startAngle: .pi * 1.1, endAngle: .pi * 0.9, clockwise: true)
+                stroke(arc)
+                line([CGPoint(x: 3, y: 4), CGPoint(x: 3, y: 9.5), CGPoint(x: 8.5, y: 9.5)])
+                line([CGPoint(x: 12, y: 7), CGPoint(x: 12, y: 12), CGPoint(x: 15.5, y: 14)])
             case .xCircle:
                 circle(CGPoint(x: 12, y: 12), 10).fill()
                 cg.setBlendMode(.clear)

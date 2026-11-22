@@ -12,6 +12,8 @@ final class EditorPage: UIStackView {
     private let dynamic = UIStackView()
     private let messageSlot = UIStackView()
     private let freeCaption: UILabel
+    /// Builds the yellow snapshot offer (Pages.snapshotOffer), set by the root controller.
+    var snapshotOffer: ((StorageLayout) -> UIView?)?
 
     init(model: AppModel, metrics: Metrics, toolbar: UIToolbar) {
         self.model = model; m = metrics
@@ -79,6 +81,7 @@ final class EditorPage: UIStackView {
         messageSlot.isHidden = messageSlot.arrangedSubviews.isEmpty
 
         dynamic.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        if let offer = snapshotOffer?(layout) { dynamic.addArrangedSubview(offer) }
         let following = model.followingPartitions
         if !following.isEmpty && layout.growthSupported {
             let size = following.reduce(0) { $0 + $1.blocks * layout.sectorSize }
@@ -105,6 +108,7 @@ final class EditorPage: UIStackView {
     private func message(_ layout: StorageLayout) -> String? {
         guard let bytes = model.targetBytes else { return model.editorMessage }
         if let minimum = layout.minimumContainerBytes, bytes < minimum, bytes < layout.containerBytes {
+            // The snapshot offer, when there is one, sits right below the size card.
             return "Can’t go below \(Capacity.gb(minimum))."
         }
         if bytes > layout.maximumBytes {

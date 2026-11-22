@@ -56,6 +56,7 @@ public struct ServiceSnapshot: Codable, Equatable, Sendable {
 public enum MockScenario: String, Codable, CaseIterable, Sendable {
     case normal, freeSpace, mismatch, linuxBlocked, longSilence, disconnect
     case resizeError, partitionError, verificationError, workerCrash, rejectedSizing, noPrivileges, invalidLayout
+    case snapshot, snapshotProtected
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -72,6 +73,8 @@ public enum MockScenario: String, Codable, CaseIterable, Sendable {
         case .rejectedSizing: return "Sizing rejected by service"
         case .noPrivileges: return "Privileged helper unavailable"
         case .invalidLayout: return "GPT copies disagree"
+        case .snapshot: return "orig-fs snapshot holds space (iOS 12-14)"
+        case .snapshotProtected: return "orig-fs is the snapshot iOS reverts to"
         }
     }
 }
@@ -80,6 +83,14 @@ public struct StartRequest: Codable, Sendable {
     public var planID: UUID
     public var requestID: UUID
     public init(planID: UUID, requestID: UUID) { self.planID = planID; self.requestID = requestID }
+}
+
+/// Remove or take the system snapshot. The revision is the layout the user saw;
+/// the service refuses if storage changed since.
+public struct SnapshotRequest: Codable, Sendable {
+    public var revision: UUID
+    public var name: String
+    public init(revision: UUID, name: String) { self.revision = revision; self.name = name }
 }
 
 public struct ScenarioRequest: Codable, Sendable {
@@ -101,6 +112,8 @@ public protocol ResizeService: Sendable {
     func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>)
     func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
 }
 
 @available(iOS 13, macOS 10.15, *)
@@ -117,6 +130,12 @@ public extension ResizeService {
     func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot {
         try await withCheckedThrowingContinuation { c in configureMock(request) { c.resume(with: $0) } }
     }
+    func removeSnapshot(_ request: SnapshotRequest) async throws -> ServiceSnapshot {
+        try await withCheckedThrowingContinuation { c in removeSnapshot(request) { c.resume(with: $0) } }
+    }
+    func takeSnapshot(_ request: SnapshotRequest) async throws -> ServiceSnapshot {
+        try await withCheckedThrowingContinuation { c in takeSnapshot(request) { c.resume(with: $0) } }
+    }
 }
 
 public struct HTTPResizeService: ResizeService {
@@ -126,6 +145,8 @@ public struct HTTPResizeService: ResizeService {
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { send("plan", encoding: request, completion: completion) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations", encoding: request, completion: completion) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("admin/scenario", encoding: request, completion: completion) }
+    public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshots/remove", encoding: request, completion: completion) }
+    public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshots/take", encoding: request, completion: completion) }
 
     private func send<T: Decodable, B: Encodable>(_ path: String, encoding body: B, completion: @escaping ServiceCompletion<T>) {
         let data: Data
@@ -162,4 +183,6 @@ public struct UnavailableDeviceService: ResizeService {
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { completion(.failure(error)) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
+    public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
+    public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
 }

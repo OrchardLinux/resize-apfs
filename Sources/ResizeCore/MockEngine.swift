@@ -71,6 +71,36 @@ public actor MockEngine {
         return try snapshot(at: now, allowOutage: false)
     }
 
+    /// As on the device: refused while an operation is active, for a stale view,
+    /// or for a snapshot iOS needs; afterwards the minimum is what the APFS
+    /// query reports without it (here the iPod touch's 19.5 GB).
+    public func removeSnapshot(_ request: SnapshotRequest, at now: Date = Date()) throws -> ServiceSnapshot {
+        try ensureIdle()
+        guard request.revision == record.layout.revision else { throw ResizeError("Storage changed. Inspect it again before removing the snapshot.") }
+        guard let system = record.layout.systemSnapshot, system.present, system.name == request.name else {
+            throw ResizeError("There is no snapshot \(request.name) to remove.")
+        }
+        guard system.removable else { throw ResizeError("iOS marked \(system.name) as the snapshot to revert to. It was not removed.") }
+        record.layout.systemSnapshot = SystemSnapshot(name: system.name, present: false, removable: false)
+        record.layout.minimumContainerBytes = alignDown(19_500_000_000, to: record.layout.sectorSize)
+        record.layout.revision = UUID()
+        try save()
+        return try snapshot(at: now, allowOutage: false)
+    }
+
+    public func takeSnapshot(_ request: SnapshotRequest, at now: Date = Date()) throws -> ServiceSnapshot {
+        try ensureIdle()
+        guard request.revision == record.layout.revision else { throw ResizeError("Storage changed. Inspect it again before taking a snapshot.") }
+        guard let system = record.layout.systemSnapshot, !system.present, system.name == request.name else {
+            throw ResizeError("A snapshot \(request.name) already exists or cannot be taken here.")
+        }
+        // A new snapshot references what is allocated now; the minimum stays.
+        record.layout.systemSnapshot = SystemSnapshot(name: system.name, present: true, removable: true, heldBytes: 0)
+        record.layout.revision = UUID()
+        try save()
+        return try snapshot(at: now, allowOutage: false)
+    }
+
     public func configure(_ request: ScenarioRequest, at now: Date = Date()) throws -> ServiceSnapshot {
         if record.operation?.isActive == true && !request.discardSimulation {
             throw ResizeError("An operation is active. Explicitly discard the simulation to reset it.")

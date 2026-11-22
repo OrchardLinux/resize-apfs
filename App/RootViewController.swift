@@ -141,6 +141,8 @@ final class RootViewController: UIViewController {
 
     func makeEditor(_ m: Metrics) -> EditorPage {
         let page = EditorPage(model: model, metrics: m, toolbar: keyboardToolbar())
+        page.snapshotOffer = { [weak self] layout in self.map { Pages($0, m).snapshotOffer(layout, editor: true) } ?? nil }
+        page.update()
         editor = page
         return page
     }
@@ -162,6 +164,15 @@ final class RootViewController: UIViewController {
         let alert = UIAlertController(title: "Start resizing?", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Start resize", style: .destructive) { [weak self] _ in self?.model.apply() })
+        present(alert, animated: true)
+    }
+    func confirmRemoveSnapshot() {
+        guard let name = model.layout?.systemSnapshot?.name else { return }
+        let alert = UIAlertController(title: "Remove snapshot \(name)?",
+                                      message: "checkra1n’s Restore System will no longer work until a new snapshot is taken. iOS can then shrink further.",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Remove", style: .destructive) { [weak self] _ in self?.model.removeSnapshot() })
         present(alert, animated: true)
     }
     func showTechnical() {

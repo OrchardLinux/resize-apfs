@@ -166,18 +166,41 @@ final class ActionButton: UIControl {
     override var isHighlighted: Bool { didSet { alpha = isHighlighted ? 0.8 : 1 } }
 }
 
-/// Amber box with a heading and paragraphs.
+/// The yellow box: warnings and the snapshot offer share it. Amber fill and border,
+/// a heading with icon, paragraphs, and optionally one action button.
 final class WarningBox: UIView {
-    init(_ metrics: Metrics, icon: Icon, title: String, paragraphs: [String]) {
+    init(_ metrics: Metrics, icon: Icon, title: String, paragraphs: [String],
+         action: (title: String, identifier: String, run: () -> Void, enabled: Bool)? = nil) {
         super.init(frame: .zero)
         backgroundColor = Theme.warningFill
         layer.cornerRadius = 12
-        let heading = stack(.horizontal, 7, [icon.view(16, color: Theme.warningInk), label(title, Theme.font(15, .semibold, .headline), Theme.warningInk)], align: .center)
-        let body = stack(.vertical, 8, [heading] + paragraphs.map { label($0, Theme.font(metrics.caption + 1), Theme.warningInk) })
+        layer.borderWidth = 1
+        layer.borderColor = Theme.warningBorder.cgColor
+        let heading = stack(.horizontal, 8, [icon.view(16, color: Theme.warningInk),
+                                             label(title, Theme.font(metrics.regular ? 16 : 15, .semibold, .headline), Theme.warningInk)], align: .center)
+        let body = stack(.vertical, 8, [heading] + paragraphs.map { label($0, Theme.font(metrics.row), Theme.warningInk) })
+        if let action {
+            let button = UIButton(type: .system)
+            button.setTitle(action.title, for: .normal)
+            button.titleLabel?.font = Theme.font(metrics.row, .semibold)
+            button.setTitleColor(Theme.destructive, for: .normal)
+            button.setTitleColor(Theme.faint, for: .disabled)
+            button.backgroundColor = .white
+            button.layer.cornerRadius = 9
+            button.layer.borderWidth = 1
+            button.layer.borderColor = Theme.warningBorder.cgColor
+            button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
+            button.accessibilityIdentifier = action.identifier
+            button.isEnabled = action.enabled
+            button.addAction(action.run)
+            body.addArrangedSubview(stack(.horizontal, 0, [button, spacer()]))
+            body.setCustomSpacing(12, after: body.arrangedSubviews[body.arrangedSubviews.count - 2])
+        }
         body.translatesAutoresizingMaskIntoConstraints = false
         addSubview(body)
-        NSLayoutConstraint.activate([body.topAnchor.constraint(equalTo: topAnchor, constant: 16), body.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -16),
-                                     body.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16), body.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16)])
+        let padding: CGFloat = metrics.regular ? 20 : 16
+        NSLayoutConstraint.activate([body.topAnchor.constraint(equalTo: topAnchor, constant: padding), body.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -padding),
+                                     body.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padding), body.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padding)])
     }
     required init?(coder: NSCoder) { fatalError() }
 }

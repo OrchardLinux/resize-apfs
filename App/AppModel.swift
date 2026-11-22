@@ -275,6 +275,37 @@ final class AppModel {
         notify()
     }
 
+    // MARK: System snapshot
+
+    /// Remove orig-fs (after the user confirmed) or take a new one: from the storage
+    /// overview or the size editor, never during an operation; the service checks
+    /// again. In the editor, the new storage revision is the user's own change, so
+    /// editing continues with the new limit instead of "Storage changed".
+    func removeSnapshot() { snapshotAction(remove: true) }
+    func takeSnapshot() { snapshotAction(remove: false) }
+    private func snapshotAction(remove: Bool) {
+        guard [.overview, .editor].contains(state), let layout, let system = layout.systemSnapshot, !busy else { return }
+        busy = true; error = nil
+        notify()
+        let request = SnapshotRequest(revision: layout.revision, name: system.name)
+        let completion: ServiceCompletion<ServiceSnapshot> = { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                defer { self.busy = false; self.notify() }
+                switch result {
+                case .success(let fresh):
+                    if let current = self.snapshot, fresh.capturedAt < current.capturedAt { return }
+                    if self.state == .editor { self.editRevision = fresh.layout.revision; self.reviewedPlan = nil }
+                    self.snapshot = fresh; self.connectionOK = true; self.receivedAt = Date()
+                    self.machine.receive(fresh)
+                case .failure(let error): self.error = error.localizedDescription
+                }
+            }
+        }
+        if remove { service.removeSnapshot(request, completion: completion) }
+        else { service.takeSnapshot(request, completion: completion) }
+    }
+
     // MARK: Simulator mock service
 
     func configure(_ scenario: MockScenario, scale: Double, completion: @escaping (Bool) -> Void) {

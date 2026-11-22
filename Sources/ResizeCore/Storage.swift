@@ -23,6 +23,23 @@ public struct Partition: Codable, Equatable, Sendable {
     }
 }
 
+/// The system volume's snapshot that checkra1n's Restore System reverts to
+/// ("orig-fs", iOS 12-14). It can keep APFS from shrinking: its blocks stay
+/// allocated wherever they sit. nil where there is none to manage (iOS 15+
+/// boots from a sealed system snapshot; fixtures; most mock scenarios).
+public struct SystemSnapshot: Codable, Equatable, Sendable {
+    public var name: String
+    /// Whether the snapshot currently exists. Without it the app offers to take one.
+    public var present: Bool
+    /// False when iOS boots from it or would revert to it; such a snapshot is never removed.
+    public var removable: Bool
+    /// How much it raises APFS's minimum size, estimated from the on-disk metadata.
+    public var heldBytes: Int64?
+    public init(name: String = "orig-fs", present: Bool, removable: Bool, heldBytes: Int64? = nil) {
+        self.name = name; self.present = present; self.removable = removable; self.heldBytes = heldBytes
+    }
+}
+
 public struct StorageLayout: Codable, Equatable, Sendable {
     public var revision: UUID
     public var diskID: UUID
@@ -41,6 +58,8 @@ public struct StorageLayout: Codable, Equatable, Sendable {
     public var minimumContainerBytes: Int64?
     public var growthSupported: Bool
     public var issue: String?
+    /// Absent in records written before snapshots were reported.
+    public var systemSnapshot: SystemSnapshot?
 
     public var apfs: Partition { partitions.first { $0.id == backingPartitionID }! }
     public var backingBytes: Int64 { apfs.blocks * sectorSize }
@@ -60,13 +79,13 @@ public struct StorageLayout: Codable, Equatable, Sendable {
                 sectorSize: Int64, totalBlocks: Int64, firstUsableLBA: Int64, lastUsableLBA: Int64,
                 partitions: [Partition], containerID: UUID, backingPartitionID: UUID,
                 containerBytes: Int64, allocatedBytes: Int64, minimumContainerBytes: Int64?,
-                growthSupported: Bool, issue: String?) {
+                growthSupported: Bool, issue: String?, systemSnapshot: SystemSnapshot? = nil) {
         self.revision = revision; self.diskID = diskID; self.diskName = diskName; self.deviceName = deviceName
         self.sectorSize = sectorSize; self.totalBlocks = totalBlocks; self.firstUsableLBA = firstUsableLBA
         self.lastUsableLBA = lastUsableLBA; self.partitions = partitions; self.containerID = containerID
         self.backingPartitionID = backingPartitionID; self.containerBytes = containerBytes
         self.allocatedBytes = allocatedBytes; self.minimumContainerBytes = minimumContainerBytes
-        self.growthSupported = growthSupported; self.issue = issue
+        self.growthSupported = growthSupported; self.issue = issue; self.systemSnapshot = systemSnapshot
     }
 
     public func validate() throws {
@@ -98,6 +117,7 @@ public struct StorageLayout: Codable, Equatable, Sendable {
         let last: Int64 = 7_812_494
         let apfsID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let reduced = [.freeSpace, .linuxBlocked].contains(scenario)
+        let snapshotted = [.snapshot, .snapshotProtected].contains(scenario)
         let container: Int64 = (reduced || scenario == .mismatch) ? 24_000_000_000 : (last - start + 1) * sector
         let partitionEnd = reduced ? start + container / sector - 1 : last
         var partitions = [
@@ -117,8 +137,10 @@ public struct StorageLayout: Codable, Equatable, Sendable {
                              totalBlocks: 7_812_500, firstUsableLBA: 6, lastUsableLBA: last,
                              partitions: partitions, containerID: UUID(uuidString: "00000000-0000-0000-0000-000000000088")!,
                              backingPartitionID: apfsID, containerBytes: container, allocatedBytes: 18_400_000_000,
-                             minimumContainerBytes: alignDown(20_000_000_000, to: sector), growthSupported: true,
-                             issue: scenario == .invalidLayout ? "The simulated primary and backup GPT disagree." : nil)
+                             minimumContainerBytes: alignDown(snapshotted ? 29_600_000_000 : 20_000_000_000, to: sector), growthSupported: true,
+                             issue: scenario == .invalidLayout ? "The simulated primary and backup GPT disagree." : nil,
+                             systemSnapshot: snapshotted ? SystemSnapshot(present: true, removable: scenario == .snapshot,
+                                                                          heldBytes: scenario == .snapshot ? 10_100_000_000 : nil) : nil)
     }
 }
 
