@@ -145,7 +145,7 @@ def checkra1n_command(executable, run=subprocess.run):
 
 def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic):
     """Wait until iOS is back and checkra1n's SSH server answers over USB."""
-    print('Waiting for iOS to start and checkra1n to finish (up to 5 minutes)...', flush=True)
+    print('Waiting for iOS to start...', flush=True)
     deadline = now() + timeout
     last = None
     while now() < deadline:
@@ -161,12 +161,6 @@ def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic):
 
 def run(executable, ask=input):
     app, helper = payload()
-    print('\nBoot tips:\n  Put the device in DFU mode when checkra1n asks for it.\n'
-          '  checkra1n works on iOS 12.0-14.8.1. Afterwards iOS starts on its own.\n\n'
-          'Back up first. Resizing still requires confirmation in the app.')
-    if ask('Start checkra1n now? Type yes: ').strip() != 'yes':
-        print('Boot cancelled. Nothing was sent to the device.')
-        return
     result = subprocess.run(checkra1n_command(executable))
     require(result.returncode == 0, 'checkra1n did not finish. Put the device in DFU mode and try again.')
     wait_for_ssh()
@@ -175,17 +169,15 @@ def run(executable, ask=input):
         session = Session(work)
         session.open()
         try:
-            print('Copying Resize APFS to the device...', flush=True)
             remove_leftovers(session)
             install(session, app, helper)
             process = start_helper(session)
-            print('\nResize APFS is on the home screen. Open it and resize there.')
             while True:
-                ask('When you are done in the app, press Enter here to remove it again. ')
+                ask('Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. ')
                 if not busy(session):
                     break
                 print('A resize is still running. Wait until the app shows it has finished.')
             finish(session, process)
-            print('Resize APFS was removed from the device.')
+            print('Removed.')
         finally:
             session.close()

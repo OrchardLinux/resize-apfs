@@ -90,6 +90,18 @@ class VersionChoiceTests(unittest.TestCase):
             launcher.ios_version(None)
 
 
+class OverlayReuseTests(unittest.TestCase):
+    def test_an_overlay_from_another_palera1n_is_not_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            overlay = pathlib.Path(directory) / 'release-x.dmg'
+            overlay.write_bytes(b'image')
+            overlay.with_suffix('.json').write_text('{"palera1n": {"installedBinarySHA256": "old"}}')
+            self.assertFalse(launcher.made_by(overlay, {'installedBinarySHA256': 'pinned'}))
+            self.assertTrue(launcher.made_by(overlay, {'installedBinarySHA256': 'old'}))
+            overlay.with_suffix('.json').unlink()
+            self.assertFalse(launcher.made_by(overlay, {'installedBinarySHA256': 'old'}))
+
+
 class FakeUsbmuxd(threading.Thread):
     """Answers ListDevices and Connect like usbmuxd, then echoes the tunnel back."""
 

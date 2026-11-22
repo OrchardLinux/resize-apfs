@@ -28,14 +28,22 @@ def verify_package():
     return sums.read_bytes()
 
 
+def made_by(overlay, info):
+    """True when the overlay was built from this palera1n."""
+    try:
+        manifest = json.loads(overlay.with_suffix('.json').read_text())
+        return manifest['palera1n']['installedBinarySHA256'] == info['installedBinarySHA256']
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
 def ios_version(given):
     """The installed iOS major version: --ios, or the user's answer. It picks the route."""
     if given is None:
-        print('Which version of iOS/iPadOS is installed on the device?\n'
-              '(On the device: Settings > General > About > iOS Version.)\n'
-              '  1) iOS/iPadOS 15 or later\n'
-              '  2) iOS/iPadOS 12, 13 or 14')
-        answer = input('Type 1 or 2: ').strip()
+        print('iOS/iPadOS version on the device (Settings > General > About):\n'
+              '  1) 15 or later\n'
+              '  2) 12, 13 or 14')
+        answer = input('> ').strip()
         require(answer in ('1', '2'), 'Please answer 1 or 2.')
         given = 15 if answer == '1' else 12
     require(given >= 12, 'Resize APFS needs iOS/iPadOS 12 or later.')
@@ -55,11 +63,12 @@ def main():
         import checkra1n_route
         checkra1n_route.payload()
         executable = pinned.provide('checkra1n')
-        print('checkra1n ready.', flush=True)
         if args.action == 'boot':
             checkra1n_route.run(executable)
         return
     palera1n = pinned.provide('palera1n')
+    # The overlay scripts find palera1n through PALERA1N: they must use this one, not one in PATH.
+    os.environ['PALERA1N'] = str(palera1n)
     os.environ.setdefault('RA1N_CLI', '1')  # palera1n 3.0 starts its terminal interface only when asked
     info = discover(str(palera1n))
     if sys.platform.startswith('linux'):
@@ -77,7 +86,10 @@ def main():
                              sys.platform.encode() + platform.machine().encode()).hexdigest()[:20]
         overlay = work / ('release-' + key + '.dmg')
         log = work / 'prepare.log'
-        print('Preparing palera1n overlay...', flush=True)
+        if overlay.is_file() and not made_by(overlay, info):
+            overlay.unlink()
+        if not overlay.is_file():
+            print('Preparing the boot files...', flush=True)
         with log.open('w') as stream:
             if not overlay.is_file():
                 result = subprocess.run([sys.executable, str(ROOT / 'scripts/build-overlay.py'), '--enable-writes', '--output', str(overlay)],
@@ -86,16 +98,10 @@ def main():
                 result = subprocess.run([sys.executable, str(ROOT / 'scripts/audit-overlay.py'), str(overlay)],
                                         cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
         require(result.returncode == 0, 'Overlay preparation failed. Details: ' + str(log))
-        print('Overlay ready.', flush=True)
     if args.action == 'prepare':
         return
-    print('\nBoot tips:\n  Before DFU: close browsers that may use WebUSB.\n  Chrome USB settings: chrome://settings/content/usbDevices\n  Stuck at the Apple logo after palera1n starts? Briefly disconnect\n  the cable from the device and reconnect it.\n\nAfter boot: wait for iOS/iPadOS to start normally, then unlock the device.\nThe Resize APFS icon can take about a minute to appear on the Home Screen.\n\nBack up first. Resizing still requires confirmation in the app.\nConnect only the intended device and follow palera1n’s DFU instructions.')
-    if input('Start palera1n now? Type yes: ').strip() != 'yes':
-        print('Boot cancelled. Nothing was sent to the device.')
-        return
-    # Recheck the external installation after the prompt; never reuse stale argv.
     argv = command(overlay, discover(str(palera1n)))
-    print('Starting palera1n...', flush=True)
+    print('After the boot, unlock the device: Resize APFS appears on the Home Screen within a minute.', flush=True)
     os.execv(argv[0], argv)
 
 
