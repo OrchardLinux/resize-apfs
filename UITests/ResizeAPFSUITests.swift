@@ -60,6 +60,8 @@ final class ResizeAPFSUITests: XCTestCase {
         // Sizes show rounded like everywhere else; the exact values stay behind them.
         XCTAssertEqual(app.textFields["targetSize"].value as? String, "31.6")
         XCTAssertEqual(app.textFields["freeAfter"].value as? String, "0")
+        enterSize("24.56", app: app)
+        XCTAssertEqual(app.textFields["targetSize"].value as? String, "24.5", "one decimal at most")
         enterSize("24", app: app)
         XCTAssertEqual(app.textFields["freeAfter"].value as? String, "7.6")
         app.swipeUp()

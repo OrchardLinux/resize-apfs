@@ -391,6 +391,7 @@ final class SizeField: UIView, UITextFieldDelegate {
         field.accessibilityLabel = title
         field.accessibilityIdentifier = identifier
         field.addTarget(self, action: #selector(edited), for: .editingChanged)
+        field.delegate = self
         let clear = UIButton(type: .custom)
         clear.setImage(Icon.xCircle.image(16), for: .normal)
         clear.tintColor = Theme.faint.withAlphaComponent(0.6)
@@ -425,6 +426,15 @@ final class SizeField: UIView, UITextFieldDelegate {
         if field.text != text { field.text = text }
         clear.isHidden = text.isEmpty
         frameView.layer.borderColor = (error ? Theme.destructive : Theme.blue.withAlphaComponent(0.6)).cgColor
+    }
+    /// Digits and one decimal at most, the precision every size is shown with.
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        let current = textField.text ?? ""
+        guard let swap = Range(range, in: current) else { return false }
+        let text = current.replacingCharacters(in: swap, with: string)
+        let parts = text.split(separator: ".", omittingEmptySubsequences: false).flatMap { $0.split(separator: ",", omittingEmptySubsequences: false) }
+        guard text.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == "." || $0 == ",") }), parts.count <= 2 else { return false }
+        return parts[0].count <= 5 && (parts.count == 1 || parts[1].count <= 1)
     }
     @objc private func edited() { clear.isHidden = (field.text ?? "").isEmpty; onChange(field.text ?? "") }
     @objc private func clearTapped() { field.text = ""; edited() }

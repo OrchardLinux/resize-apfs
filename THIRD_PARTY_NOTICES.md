@@ -46,5 +46,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+The iOS 12-14 app (`out/device-ios12`) contains the Swift runtime and system
+overlay libraries in `ResizeAPFS.app/Frameworks`, copied at build time from the
+Xcode toolchain's back-deployment runtime (`usr/lib/swift-5.0/iphoneos`), because
+iOS 12.0 and 12.1 have no Swift runtime. They are part of the Swift project,
+licensed under the Apache License 2.0 with the Runtime Library Exception, which
+permits redistributing them embedded in a compiled product. iOS 12.2 and later
+use the system's copy instead.
+https://www.swift.org/legal/license.html
+
 Build tools such as Xcode and ldid are external dependencies and are not
 included in the release.

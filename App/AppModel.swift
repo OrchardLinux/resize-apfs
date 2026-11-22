@@ -64,14 +64,16 @@ final class AppModel {
         return layout
     }
     /// The requested size: the exact derived value, or what was typed. A typed
-    /// value within the display rounding (0.05 GB) of a limit means that limit,
-    /// so the "31.6" the app shows for 31.599980544 GB can be typed back.
+    /// value within the display rounding (0.05 GB) of the maximum, on either
+    /// side, means the maximum: typing back the "31.6" shown for 31.64 GB or for
+    /// 31.599980544 GB fills the space exactly instead of leaving a sliver
+    /// unallocated or being refused. Just below the minimum means the minimum.
     var targetBytes: Int64? {
         if let targetExact { return targetExact }
         guard let typed = Capacity.parseGB(targetText) else { return nil }
         guard let layout = editingLayout else { return typed }
         let tolerance: Int64 = 50_000_000
-        if typed > layout.maximumBytes && typed - layout.maximumBytes < tolerance { return layout.maximumBytes }
+        if abs(typed - layout.maximumBytes) < tolerance { return layout.maximumBytes }
         if let minimum = layout.minimumContainerBytes, typed < minimum, minimum - typed < tolerance { return minimum }
         return typed
     }
