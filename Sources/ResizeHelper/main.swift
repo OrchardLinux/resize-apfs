@@ -106,6 +106,10 @@ final class HelperServer: @unchecked Sendable {
                         case "start":
                             guard let data = request.body else { throw ResizeError("Missing start request.") }
                             body = try encoder.encode(engine.start(decoder.decode(StartRequest.self, from: data)))
+                        case "removeSnapshot", "takeSnapshot":
+                            guard let data = request.body else { throw ResizeError("Missing snapshot request.") }
+                            let snapshotRequest = try decoder.decode(SnapshotRequest.self, from: data)
+                            body = try encoder.encode(request.method == "removeSnapshot" ? engine.removeSnapshot(snapshotRequest) : engine.takeSnapshot(snapshotRequest))
                         default: throw ResizeError("Unsupported operation. No shell or arbitrary-file API is exposed.")
                         }
                         response = LocalRPCResponse(body: body)

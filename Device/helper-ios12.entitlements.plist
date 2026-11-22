@@ -11,4 +11,6 @@
          (--register-app / --unregister-app), as uicache does. -->
     <key>com.apple.lsapplicationworkspace.rebuildappdatabases</key><true/>
     <key>com.apple.private.MobileContainerManager.allowed</key><true/>
+    <!-- Removing and taking checkra1n's orig-fs snapshot (fs_snapshot_delete/create). -->
+    <key>com.apple.private.vfs.snapshot</key><true/>
 </dict></plist>

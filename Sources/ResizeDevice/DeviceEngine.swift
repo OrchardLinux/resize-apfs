@@ -26,6 +26,12 @@ public final class DeviceEngine: @unchecked Sendable {
     private var executing = false
     private var sampling = false
     private var inheritedOperation = false
+    /// A snapshot removal or creation is in progress; no plan or start meanwhile.
+    private var snapshotting = false
+    /// The system snapshot's last scanned state. The on-disk scan is expensive,
+    /// so refresh repeats it at most once a minute; other inspections keep it.
+    private var systemSnapshot: SystemSnapshot?
+    private var snapshotScannedAt: Date?
 
     public init(source: DeviceSource, directory: URL, executable: String) throws {
         self.source = source; self.directory = directory; self.executable = executable
@@ -48,19 +54,25 @@ public final class DeviceEngine: @unchecked Sendable {
     }
 
     public func refresh() {
-        let includeMinimum: Bool? = sync {
+        let flags: (minimum: Bool, snapshots: Bool)? = sync {
             guard !sampling else { return nil }
             sampling = true
-            return record?.operation.status != .running
+            let idle = record?.operation.status != .running && !snapshotting
+            let due = snapshotScannedAt.map { Date().timeIntervalSince($0) >= 60 } ?? true
+            return (record?.operation.status != .running, idle && due)
         }
-        guard let includeMinimum else { return }
+        guard let flags else { return }
         let source = source
         let result: Result<DeviceInspection, Error>
-        do { result = .success(try DeviceInspector.inspect(source, queryMinimum: includeMinimum)) }
-        catch { result = .failure(error) }
+        do {
+            var latest = try DeviceInspector.inspect(source, queryMinimum: flags.minimum)
+            if flags.snapshots { latest.layout.systemSnapshot = SystemSnapshots.inspect(source, latest) }
+            result = .success(latest)
+        } catch { result = .failure(error) }
         sync {
             switch result {
             case .success(let latest):
+                if flags.snapshots { systemSnapshot = latest.layout.systemSnapshot; snapshotScannedAt = Date() }
                 accept(latest)
                 if record?.operation.status == .completed, let plan = record?.operation.plan,
                    (latest.layout.diskID != plan.after.diskID || latest.layout.containerID != plan.after.containerID ||
@@ -152,6 +164,51 @@ public final class DeviceEngine: @unchecked Sendable {
         }
     }
 
+    public func removeSnapshot(_ request: SnapshotRequest) throws -> ServiceSnapshot { try changeSnapshot(request, remove: true) }
+    public func takeSnapshot(_ request: SnapshotRequest) throws -> ServiceSnapshot { try changeSnapshot(request, remove: false) }
+
+    /// Removes or creates the system snapshot, as its own mutation: refused while
+    /// an operation runs, for a stale view, or when a fresh check of the mounted
+    /// list and the on-disk metadata disagrees with the request. Afterwards the
+    /// disk is inspected again, so iOS's minimum query reports the new limit.
+    private func changeSnapshot(_ request: SnapshotRequest, remove: Bool) throws -> ServiceSnapshot {
+        try sync {
+            try ensureIdle()
+            guard source.writesEnabled, !source.isFixture else { throw ResizeError("This helper permits inspection only. The snapshot was not changed.") }
+            guard SystemSnapshots.applicable else { throw ResizeError("This iOS version has no snapshot to manage here.") }
+            snapshotting = true
+        }
+        defer { sync { snapshotting = false } }
+        let source = source
+        var fresh = try DeviceInspector.inspect(source)
+        fresh.layout.systemSnapshot = SystemSnapshots.inspect(source, fresh)
+        guard fresh.layout.revision == request.revision else { throw ResizeError("Storage changed. Inspect it again; the snapshot was not changed.") }
+        guard let system = fresh.layout.systemSnapshot, system.name == request.name else {
+            throw ResizeError("The snapshot \(request.name) could not be checked. It was not changed.")
+        }
+        let status: Int32
+        if remove {
+            guard system.present else { throw ResizeError("There is no snapshot \(system.name) to remove.") }
+            guard system.removable else {
+                throw ResizeError("iOS boots from or would revert to \(system.name), or its metadata could not be confirmed. It was not removed.")
+            }
+            status = raf_delete_snapshot(SystemSnapshots.mount, system.name)
+        } else {
+            guard !system.present else { throw ResizeError("A snapshot \(system.name) already exists.") }
+            status = raf_create_snapshot(SystemSnapshots.mount, system.name)
+        }
+        guard status == 0 else {
+            throw ResizeError("\(remove ? "Removing" : "Taking") the snapshot \(system.name) failed: \(String(cString: strerror(status))). Nothing else was changed.")
+        }
+        var after = try DeviceInspector.inspect(source)
+        after.layout.systemSnapshot = SystemSnapshots.inspect(source, after)
+        return try sync {
+            systemSnapshot = after.layout.systemSnapshot; snapshotScannedAt = Date()
+            accept(after)
+            return try currentSnapshot()
+        }
+    }
+
     /// True while an operation this journal started is running, or its worker
     /// process is still alive. Used by `--operation-active`, which runs while
     /// the session helper holds the journal lock, so it reads the journal file.
@@ -234,6 +291,7 @@ public final class DeviceEngine: @unchecked Sendable {
             let source = source
             let final = try DeviceInspector.inspect(source)
             try sync {
+                snapshotScannedAt = nil
                 accept(final)
                 record?.operation.status = .completed
                 record?.operation.message = "All requested storage changes were completed and verified from APFS and both GPT copies. This is not a full filesystem-integrity check."
@@ -310,6 +368,7 @@ public final class DeviceEngine: @unchecked Sendable {
 
     private func stopAfterWorker(_ result: WorkerResult) {
         sync {
+            snapshotScannedAt = nil
             record?.operation.workerPID = nil
             record?.operation.message = result.message
         }
@@ -338,11 +397,12 @@ public final class DeviceEngine: @unchecked Sendable {
     private func accept(_ latest: DeviceInspection) {
         guard inspection == nil || latest.observedAt >= inspection!.observedAt else { return }
         inspection = latest
+        if inspection?.layout.systemSnapshot == nil { inspection?.layout.systemSnapshot = systemSnapshot }
         record?.operation.observedCapacityBytes = latest.layout.containerBytes
         record?.operation.observedAt = latest.observedAt
     }
     private func ensureIdle() throws {
-        guard !executing, record?.operation.status != .running, record?.operation.status != .unknown else {
+        guard !executing, !snapshotting, record?.operation.status != .running, record?.operation.status != .unknown else {
             throw ResizeError("An operation is active or its outcome is unknown. No new mutation is allowed.")
         }
     }
