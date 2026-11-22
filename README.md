@@ -13,24 +13,19 @@ leave the released space unallocated or create an unformatted Linux partition.
 
 ## Requirements
 
-- A palera1n-compatible iPhone or iPad running iOS/iPadOS 15 or later.
+- An iPhone, iPad or iPod touch with a checkm8 chip (A8 to A11) on iOS/iPadOS 15 or later,
+  or any checkm8 device (A7 to A11) on iOS 12 to 14. The iOS 12-14 route needs the iOS 12
+  app, which is not in a release yet.
 - Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
 - Python 3.9 or later and a USB connection to the device.
-- [palera1n 3.0.0 beta 3](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.3),
-  installed separately. It boots devices that 2.4 does not start reliably (iPad mini 4),
-  and works on those 2.4 does. Compatible overlays are checked by structure, not a
-  version/hash whitelist.
 
-  palera1n 3.0 runs in the terminal only when told to, and on macOS it comes as an app
-  rather than a command in your PATH. Before `./resize-apfs boot`, point the launcher at it:
-
-  ```sh
-  export RA1N_CLI=1
-  export PALERA1N=/Applications/palera1n.app/Contents/MacOS/palera1n  # macOS
-  ```
-
-  On Linux, `PALERA1N` is the path to the downloaded palera1n binary, or leave it unset
-  if `palera1n` is in your PATH.
+The launcher downloads the jailbreak it needs on first use, pinned by size and checksum:
+[palera1n 3.0.0 beta 4](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.4)
+for iOS 15 and later, [checkra1n 0.12.4](https://checkra.in/releases/0.12.4-beta) for
+iOS 12 to 14. They are kept in Orchard's cache (`~/Library/Caches/orchard2` on macOS,
+`~/.cache/orchard2` on Linux), shared with the Orchard installer. To use your own build
+instead, set `PALERA1N` or `CHECKRA1N` to its path. On Apple Silicon, checkra1n needs
+Rosetta. On Linux, the iOS 12-14 route needs the `usbmuxd` service.
 
 Tested on hardware:
 
@@ -62,9 +57,13 @@ Other devices and iOS versions are untested.
    ./resize-apfs boot
    ```
 
-   The launcher checks prerequisites, prepares the custom overlay locally using
-   your palera1n installation, and asks before starting the boot process. Follow
-   the palera1n prompts to enter DFU mode.
+   The launcher asks which iOS version the device runs (Settings > General > About;
+   `--ios 15` or `--ios 12` skips the question), downloads palera1n or checkra1n,
+   and asks before starting the boot process. Follow the prompts to enter DFU mode.
+
+   On iOS 12 to 14 the launcher then copies Resize APFS to the device over the USB
+   cable. When you are done in the app, press Enter in the terminal and it removes
+   the app again.
 
 4. Wait for iOS/iPadOS to finish starting normally, then unlock your device.
 5. Wait for the Resize APFS icon to appear on the Home Screen. **This can take
@@ -73,7 +72,8 @@ Other devices and iOS versions are untested.
 7. Wait for **Completed and verified** before restarting the device.
 
 Booting loads the utility; it does not automatically resize anything. On Linux,
-only starting palera1n may prompt for sudo; image preparation does not require root.
+only starting palera1n or checkra1n may prompt for sudo; image preparation does not
+require root.
 
 ## While resizing
 
