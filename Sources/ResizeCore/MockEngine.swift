@@ -2,6 +2,8 @@ import Foundation
 
 /// Operates only on a JSON model. It never opens a disk or invokes storage tools.
 /// The server drives tick independently of UI connections; tests inject time.
+/// Mac-side only (mock server, tests): an actor, so it needs Swift concurrency.
+@available(iOS 13, macOS 10.15, *)
 public actor MockEngine {
     private struct Record: Codable {
         var layout: StorageLayout

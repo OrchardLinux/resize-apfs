@@ -3,7 +3,7 @@ import Foundation
 public let linuxTypeGUID = "0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 public let apfsTypeGUID = "7C3457EF-0000-11AA-AA11-00306543ECAC"
 
-public struct Partition: Codable, Equatable, Identifiable, Sendable {
+public struct Partition: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable { case apfs, linux, other }
     public var id: UUID
     public var name: String
@@ -134,8 +134,18 @@ public func alignUp(_ value: Int64, to alignment: Int64) -> Int64 {
 }
 
 public enum Capacity {
+    /// Same output as the iOS 15 `.formatted(.number.precision(.fractionLength(0...1)))`
+    /// it replaces: the current locale's separators, grouping, at most one decimal,
+    /// rounded half-to-even.
     public static func gb(_ bytes: Int64) -> String {
-        (Double(bytes) / 1_000_000_000).formatted(.number.precision(.fractionLength(0...1))) + " GB"
+        let formatter = NumberFormatter()
+        formatter.locale = .current
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        formatter.roundingMode = .halfEven
+        let value = Double(bytes) / 1_000_000_000
+        return (formatter.string(from: NSNumber(value: value)) ?? String(format: "%.1f", value)) + " GB"
     }
     public static func input(_ bytes: Int64) -> String {
         NSDecimalNumber(decimal: Decimal(bytes) / 1_000_000_000).stringValue

@@ -57,12 +57,12 @@ final class HelperServer: @unchecked Sendable {
     }
 
     func run() {
-        Task {
-            while !Task.isCancelled {
-                await engine.refresh()
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+        Thread { [engine] in
+            while true {
+                engine.refresh()
+                Thread.sleep(forTimeInterval: 5)
             }
-        }
+        }.start()
         while true {
             clients.wait()
             let fd = accept(socketFD, nil, nil)
@@ -85,30 +85,27 @@ final class HelperServer: @unchecked Sendable {
                     while true {
                     let request = try JSONDecoder().decode(LocalRPCRequest.self, from: LocalFrames.read(from: fd))
                     guard constantTimeEqual(request.token, token) else { throw ResizeError("Invalid local helper credentials.") }
-                    let semaphore = DispatchSemaphore(value: 0)
                     // The response may be delayed by initial inspection. The client
                     // times out without resubmitting mutations; state lives here.
-                    Task {
-                        let response: LocalRPCResponse
-                        do {
-                            let encoder = JSONEncoder(), decoder = JSONDecoder()
-                            let body: Data
-                            switch request.method {
-                            case "snapshot": body = try encoder.encode(await engine.snapshot())
-                            case "plan":
-                                guard let data = request.body else { throw ResizeError("Missing review request.") }
-                                body = try encoder.encode(await engine.plan(decoder.decode(PlanRequest.self, from: data)))
-                            case "start":
-                                guard let data = request.body else { throw ResizeError("Missing start request.") }
-                                body = try encoder.encode(await engine.start(decoder.decode(StartRequest.self, from: data)))
-                            default: throw ResizeError("Unsupported operation. No shell or arbitrary-file API is exposed.")
-                            }
-                            response = LocalRPCResponse(body: body)
-                        } catch { response = LocalRPCResponse(error: ResizeError(error.localizedDescription)) }
-                        try? LocalFrames.write(JSONEncoder().encode(response), to: fd)
-                        semaphore.signal()
-                    }
-                    semaphore.wait()
+                    // The engine releases its lock during disk reads, so a slow
+                    // request on one connection never stalls status on another.
+                    let response: LocalRPCResponse
+                    do {
+                        let encoder = JSONEncoder(), decoder = JSONDecoder()
+                        let body: Data
+                        switch request.method {
+                        case "snapshot": body = try encoder.encode(engine.snapshot())
+                        case "plan":
+                            guard let data = request.body else { throw ResizeError("Missing review request.") }
+                            body = try encoder.encode(engine.plan(decoder.decode(PlanRequest.self, from: data)))
+                        case "start":
+                            guard let data = request.body else { throw ResizeError("Missing start request.") }
+                            body = try encoder.encode(engine.start(decoder.decode(StartRequest.self, from: data)))
+                        default: throw ResizeError("Unsupported operation. No shell or arbitrary-file API is exposed.")
+                        }
+                        response = LocalRPCResponse(body: body)
+                    } catch { response = LocalRPCResponse(error: ResizeError(error.localizedDescription)) }
+                    try? LocalFrames.write(JSONEncoder().encode(response), to: fd)
                     }
                 } catch { try? LocalFrames.write(JSONEncoder().encode(LocalRPCResponse(error: ResizeError(error.localizedDescription))), to: fd) }
             }

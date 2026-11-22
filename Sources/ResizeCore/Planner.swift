@@ -55,7 +55,7 @@ public struct PlanRequest: Codable, Equatable, Sendable {
     }
 }
 
-public struct ResizePlan: Codable, Equatable, Identifiable, Sendable {
+public struct ResizePlan: Codable, Equatable, Sendable {
     public var id: UUID
     public var request: PlanRequest
     public var before: StorageLayout

@@ -11,7 +11,7 @@ public enum WorkerConfirmation {
     }
 }
 
-public struct Operation: Codable, Equatable, Identifiable, Sendable {
+public struct Operation: Codable, Equatable, Sendable {
     public var id: UUID
     public var requestID: UUID
     public var plan: ResizePlan
@@ -53,7 +53,7 @@ public struct ServiceSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-public enum MockScenario: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum MockScenario: String, Codable, CaseIterable, Sendable {
     case normal, freeSpace, mismatch, linuxBlocked, longSilence, disconnect
     case resizeError, partitionError, verificationError, workerCrash, rejectedSizing, noPrivileges, invalidLayout
     public var id: String { rawValue }
@@ -91,28 +91,48 @@ public struct ScenarioRequest: Codable, Sendable {
     }
 }
 
+/// Completion-based so it runs on iOS 12, which has no Swift concurrency.
+/// Completions arrive on an arbitrary queue; UI callers hop to the main queue.
+/// The async forms below wrap exactly these calls on systems that have it.
+public typealias ServiceCompletion<T> = @Sendable (Result<T, Error>) -> Void
+
 public protocol ResizeService: Sendable {
-    func snapshot() async throws -> ServiceSnapshot
-    func plan(_ request: PlanRequest) async throws -> ResizePlan
-    func start(_ request: StartRequest) async throws -> ServiceSnapshot
-    func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot
+    func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>)
+    func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+}
+
+@available(iOS 13, macOS 10.15, *)
+public extension ResizeService {
+    func snapshot() async throws -> ServiceSnapshot {
+        try await withCheckedThrowingContinuation { c in snapshot { c.resume(with: $0) } }
+    }
+    func plan(_ request: PlanRequest) async throws -> ResizePlan {
+        try await withCheckedThrowingContinuation { c in plan(request) { c.resume(with: $0) } }
+    }
+    func start(_ request: StartRequest) async throws -> ServiceSnapshot {
+        try await withCheckedThrowingContinuation { c in start(request) { c.resume(with: $0) } }
+    }
+    func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot {
+        try await withCheckedThrowingContinuation { c in configureMock(request) { c.resume(with: $0) } }
+    }
 }
 
 public struct HTTPResizeService: ResizeService {
     public let baseURL: URL
     public init(baseURL: URL = URL(string: "http://127.0.0.1:8472")!) { self.baseURL = baseURL }
-    public func snapshot() async throws -> ServiceSnapshot { try await call("snapshot") }
-    public func plan(_ request: PlanRequest) async throws -> ResizePlan { try await call("plan", body: request) }
-    public func start(_ request: StartRequest) async throws -> ServiceSnapshot { try await call("operations", body: request) }
-    public func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot { try await call("admin/scenario", body: request) }
+    public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshot", body: nil, completion: completion) }
+    public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { send("plan", encoding: request, completion: completion) }
+    public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations", encoding: request, completion: completion) }
+    public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("admin/scenario", encoding: request, completion: completion) }
 
-    private func call<T: Decodable>(_ path: String) async throws -> T {
-        try await send(path, body: nil)
+    private func send<T: Decodable, B: Encodable>(_ path: String, encoding body: B, completion: @escaping ServiceCompletion<T>) {
+        let data: Data
+        do { data = try JSONEncoder().encode(body) } catch { completion(.failure(error)); return }
+        send(path, body: data, completion: completion)
     }
-    private func call<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
-        try await send(path, body: JSONEncoder().encode(body))
-    }
-    private func send<T: Decodable>(_ path: String, body: Data?) async throws -> T {
+    private func send<T: Decodable>(_ path: String, body: Data?, completion: @escaping ServiceCompletion<T>) {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.timeoutInterval = 4
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -120,12 +140,17 @@ public struct HTTPResizeService: ResizeService {
             request.httpMethod = "POST"; request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw ResizeError("Invalid service response.") }
-        if !(200..<300).contains(http.statusCode) {
-            throw (try? JSONDecoder().decode(ResizeError.self, from: data)) ?? ResizeError("Service returned HTTP \(http.statusCode).")
-        }
-        return try JSONDecoder().decode(T.self, from: data)
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            completion(Result {
+                if let error { throw error }
+                guard let http = response as? HTTPURLResponse else { throw ResizeError("Invalid service response.") }
+                let data = data ?? Data()
+                if !(200..<300).contains(http.statusCode) {
+                    throw (try? JSONDecoder().decode(ResizeError.self, from: data)) ?? ResizeError("Service returned HTTP \(http.statusCode).")
+                }
+                return try JSONDecoder().decode(T.self, from: data)
+            })
+        }.resume()
     }
 }
 
@@ -133,8 +158,8 @@ public struct HTTPResizeService: ResizeService {
 public struct UnavailableDeviceService: ResizeService {
     public init() {}
     private var error: ResizeError { ResizeError("The on-device privileged helper is not installed. This build cannot resize real storage.") }
-    public func snapshot() async throws -> ServiceSnapshot { throw error }
-    public func plan(_ request: PlanRequest) async throws -> ResizePlan { throw error }
-    public func start(_ request: StartRequest) async throws -> ServiceSnapshot { throw error }
-    public func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot { throw error }
+    public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
+    public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { completion(.failure(error)) }
+    public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
+    public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
 }

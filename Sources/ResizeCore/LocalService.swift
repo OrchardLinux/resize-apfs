@@ -76,25 +76,24 @@ private final class LocalSocketTransport: @unchecked Sendable {
     init(directory: URL) { self.directory = directory }
     deinit { if fd >= 0 { Darwin.close(fd) } }
 
-    func exchange<T: Decodable & Sendable>(_ method: String, body: Data?) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async { [self] in
-                do {
-                    try connectIfNeeded()
-                    try LocalFrames.write(JSONEncoder().encode(LocalRPCRequest(token: token!, method: method, body: body)), to: fd)
-                    let response = try JSONDecoder().decode(LocalRPCResponse.self, from: LocalFrames.read(from: fd))
-                    if let error = response.error {
-                        if error.message == "Invalid local helper credentials." { token = nil }
-                        throw error
-                    }
-                    guard let payload = response.body else { throw ResizeError("The privileged helper returned an empty result.") }
-                    continuation.resume(returning: try JSONDecoder().decode(T.self, from: payload))
-                } catch {
-                    if fd >= 0 { Darwin.close(fd); fd = -1 }
-                    // Never replay a frame, especially a start request. A later
-                    // snapshot may establish a fresh connection and inspect state.
-                    continuation.resume(throwing: error)
+    func exchange<T: Decodable>(_ method: String, body: Data?, completion: @escaping ServiceCompletion<T>) {
+        queue.async { [self] in
+            do {
+                try connectIfNeeded()
+                try LocalFrames.write(JSONEncoder().encode(LocalRPCRequest(token: token!, method: method, body: body)), to: fd)
+                let response = try JSONDecoder().decode(LocalRPCResponse.self, from: LocalFrames.read(from: fd))
+                if let error = response.error {
+                    if error.message == "Invalid local helper credentials." { token = nil }
+                    throw error
                 }
+                guard let payload = response.body else { throw ResizeError("The privileged helper returned an empty result.") }
+                let value = try JSONDecoder().decode(T.self, from: payload)
+                completion(.success(value))
+            } catch {
+                if fd >= 0 { Darwin.close(fd); fd = -1 }
+                // Never replay a frame, especially a start request. A later
+                // snapshot may establish a fresh connection and inspect state.
+                completion(.failure(error))
             }
         }
     }
@@ -131,12 +130,16 @@ public struct LocalSocketResizeService: ResizeService {
         self.directory = directory
         transport = LocalSocketTransport(directory: directory)
     }
-    public func snapshot() async throws -> ServiceSnapshot { try await call("snapshot", body: nil) }
-    public func plan(_ request: PlanRequest) async throws -> ResizePlan { try await call("plan", body: JSONEncoder().encode(request)) }
-    public func start(_ request: StartRequest) async throws -> ServiceSnapshot { try await call("start", body: JSONEncoder().encode(request)) }
-    public func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot { throw ResizeError("Mock configuration is not available on a device.") }
+    public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { transport.exchange("snapshot", body: nil, completion: completion) }
+    public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { call("plan", encoding: request, completion: completion) }
+    public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { call("start", encoding: request, completion: completion) }
+    public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) {
+        completion(.failure(ResizeError("Mock configuration is not available on a device.")))
+    }
 
-    private func call<T: Decodable & Sendable>(_ method: String, body: Data?) async throws -> T {
-        try await transport.exchange(method, body: body)
+    private func call<T: Decodable, B: Encodable>(_ method: String, encoding body: B, completion: @escaping ServiceCompletion<T>) {
+        let data: Data
+        do { data = try JSONEncoder().encode(body) } catch { completion(.failure(error)); return }
+        transport.exchange(method, body: data, completion: completion)
     }
 }

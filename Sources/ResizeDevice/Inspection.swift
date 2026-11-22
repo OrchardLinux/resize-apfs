@@ -1,6 +1,6 @@
 import Foundation
 import Darwin
-import CryptoKit
+import CommonCrypto
 import ResizeCore
 import NativeSystem
 
@@ -72,17 +72,8 @@ public struct DeviceInspection: Codable, Sendable {
 }
 
 public enum DeviceInspector {
-    /// Blocking APFS/device reads must not consume Swift cooperative-executor
-    /// threads needed by the independent worker monitor and status RPCs.
-    public static func inspectAsync(_ source: DeviceSource, queryMinimum: Bool = true) async throws -> DeviceInspection {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
-                do { continuation.resume(returning: try inspect(source, queryMinimum: queryMinimum)) }
-                catch { continuation.resume(throwing: error) }
-            }
-        }
-    }
-
+    /// Blocking: the engine calls it without holding its lock, on the thread of
+    /// the request, refresh loop or operation that needs it.
     public static func inspect(_ source: DeviceSource, queryMinimum: Bool = true) throws -> DeviceInspection {
         let disk = try RawDisk(source)
         let gpt = try disk.gpt()
@@ -104,7 +95,7 @@ public enum DeviceInspector {
                bytes % max(4096, disk.sectorSize) == 0 { minimum = bytes }
         }
         let identity = gpt.primaryHeader + gpt.primaryTable + Data("\(metadata.containerID):\(metadata.capacityBytes)".utf8)
-        let digest = Data(SHA256.hash(data: identity))
+        let digest = sha256(identity)
         var layout = StorageLayout(revision: digest.gptUUID(at: 0)!, diskID: gpt.header.diskID,
                                    diskName: "disk0", deviceName: source.isFixture ? "Regular-file fixture" : machineName(),
                                    sectorSize: disk.sectorSize, totalBlocks: disk.totalBlocks,
@@ -115,6 +106,12 @@ public enum DeviceInspector {
         try layout.validate()
         if !source.writesEnabled { layout.issue = "Inspection only. This overlay was built without storage-write permission." }
         return DeviceInspection(layout: layout, gpt: gpt, observedAt: Date(), transactionID: metadata.transactionID)
+    }
+
+    private static func sha256(_ data: Data) -> Data {
+        var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in _ = CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &digest) }
+        return Data(digest)
     }
 
     private static func machineName() -> String {
