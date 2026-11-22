@@ -175,6 +175,35 @@ final class DiskBackendTests: XCTestCase {
             }
         }
     }
+    func testErasingFollowingPartitionsThenCreatingLinux() throws {
+        for sector: Int64 in [512, 4096] {
+            try withFixture(sector) { fixture in
+                let start = try DeviceInspector.inspect(fixture.source)
+                let setup = try Planner.make(PlanRequest(revision: start.layout.revision, requestedBytes: fixture.containerBytes, createLinux: true), on: start.layout)
+                for step in [OperationStep.shrinkPartition, .createLinux] {
+                    let now = try DeviceInspector.inspect(fixture.source)
+                    XCTAssertEqual(DeviceWorker.execute(DeviceJob(source: fixture.source, step: step, plan: setup,
+                                                                  expectedGPT: now.gpt, expectedContainerBytes: fixture.containerBytes)).outcome, .success)
+                }
+                let before = try DeviceInspector.inspect(fixture.source)
+                let old = try XCTUnwrap(before.layout.partitions.first { $0.kind == .linux })
+                let plan = try Planner.make(PlanRequest(revision: before.layout.revision, requestedBytes: before.layout.containerBytes,
+                                                        createLinux: true, replacing: [old.id]), on: before.layout)
+                for step in plan.steps where [.shrinkPartition, .createLinux].contains(step) {
+                    let now = try DeviceInspector.inspect(fixture.source)
+                    let result = DeviceWorker.execute(DeviceJob(source: fixture.source, step: step, plan: plan,
+                                                                expectedGPT: now.gpt, expectedContainerBytes: fixture.containerBytes))
+                    XCTAssertEqual(result.outcome, .success, result.message)
+                }
+                let after = try DeviceInspector.inspect(fixture.source)
+                let fresh = try XCTUnwrap(after.layout.partitions.first { $0.kind == .linux })
+                XCTAssertEqual(after.layout.partitions.count, before.layout.partitions.count)
+                XCTAssertNotEqual(fresh.id, old.id)
+                XCTAssertEqual(fresh.bsdName, old.bsdName)
+                XCTAssertEqual(after.layout.containerID, before.layout.containerID)
+            }
+        }
+    }
     func testStaleOrUnsafeWritesRefusedBeforeMutation() throws {
         try withFixture { fixture in
             let before = try DeviceInspector.inspect(fixture.source)

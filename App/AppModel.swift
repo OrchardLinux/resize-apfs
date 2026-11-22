@@ -57,6 +57,12 @@ final class AppModel {
         guard let layout else { return [] }
         return layout.partitions.filter { $0.firstLBA > layout.apfs.lastLBA }.sorted { $0.firstLBA < $1.firstLBA }
     }
+    /// Only Linux partitions (any Linux type, Orchard's root and boot included) are
+    /// offered for erasing. Anything else after APFS just limits growth.
+    var canEraseFollowing: Bool {
+        let following = followingPartitions
+        return !following.isEmpty && following.allSatisfy(\.isLinux)
+    }
     /// The layout the size limits come from: without the approved partitions.
     var editingLayout: StorageLayout? {
         guard var layout else { return nil }
@@ -84,8 +90,9 @@ final class AppModel {
                            replacing: eraseFollowing ? followingPartitions.map(\.id) : [])
     }
     var canCreateLinuxPartition: Bool {
-        guard !eraseFollowing, let layout, let bytes = targetBytes else { return false }
-        let candidate = PlanRequest(revision: layout.revision, requestedBytes: bytes, createLinux: true)
+        guard let layout, let bytes = targetBytes else { return false }
+        let candidate = PlanRequest(revision: layout.revision, requestedBytes: bytes, createLinux: true,
+                                    replacing: eraseFollowing ? followingPartitions.map(\.id) : [])
         return (try? Planner.make(candidate, on: layout)) != nil
     }
     var localPlan: ResizePlan? {
@@ -211,12 +218,12 @@ final class AppModel {
         notify()
     }
     func setEraseFollowing(_ value: Bool) {
-        guard !followingPartitions.isEmpty else { return }
+        guard canEraseFollowing || !value else { return }
         eraseFollowing = value
-        if value { createLinux = false }
         // The limit changed; keep the size and recompute the free space.
         reviewedPlan = nil
         updateFree()
+        createLinux = createLinux && canCreateLinuxPartition
         notify()
     }
     func back() { machine.back(); error = nil; notify() }

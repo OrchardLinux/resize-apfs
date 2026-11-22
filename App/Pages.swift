@@ -12,7 +12,7 @@ struct Pages {
     init(_ root: RootViewController, _ metrics: Metrics) { self.root = root; m = metrics }
 
     func build() -> [UIView] {
-        var views = [header()]
+        var views: [UIView] = []
         if let error = model.error {
             let text = label(error, Theme.font(m.row), Theme.destructive)
             text.accessibilityIdentifier = "serviceError"
@@ -32,7 +32,7 @@ struct Pages {
 
     // MARK: Header
 
-    private func header() -> UIView {
+    func header() -> UIView {
         if [.editor, .review].contains(model.state) {
             let back = UIButton(type: .system)
             back.setImage(Icon.chevronLeft.image(18, lineWidth: 2.4), for: .normal)
@@ -124,24 +124,7 @@ struct Pages {
                                           label(Capacity.gb(layout.totalBytes), Theme.digits(m.caption), Theme.muted, lines: 1)], align: .center)
         let top = stack(.horizontal, 8, [kicker, spacer(), disk], align: .center)
         let bar = PartitionBar(m, layout: layout, labels: true, apfsTitle: "APFS partition · \(osName)")
-        return Card(m, spacing: 14, [top, bar, diskLegend(layout), caption("Unallocated outside partitions: \(Capacity.gb(layout.allUnallocatedBytes))")])
-    }
-
-    private func diskLegend(_ layout: StorageLayout) -> UIView {
-        func sum(_ kind: Partition.Kind) -> Int64 { layout.partitions.filter { $0.kind == kind }.reduce(0) { $0 + $1.blocks * layout.sectorSize } }
-        var items: [(UIColor, String)] = [(Theme.blue, "APFS  \(Capacity.gb(layout.backingBytes))")]
-        if sum(.linux) > 0 { items.append((Theme.linux, "Linux  \(Capacity.gb(sum(.linux)))")) }
-        if sum(.other) > 0 { items.append((Theme.other, "Other partitions  \(Capacity.gb(sum(.other)))")) }
-        if layout.allUnallocatedBytes > 0 { items.append((Theme.unallocated, "Unallocated")) }
-        let perRow = m.regular ? 4 : 2
-        let rows = stride(from: 0, to: items.count, by: perRow).map { start -> UIView in
-            let row = stack(.horizontal, 16, items[start..<min(start + perRow, items.count)].map { item in
-                stack(.horizontal, 7, [swatch(item.0, size: 8), label(item.1, Theme.font(m.caption), Theme.muted, lines: 1)], align: .center)
-            }, align: .center)
-            row.addArrangedSubview(spacer())
-            return row
-        }
-        return stack(.vertical, 8, rows)
+        return Card(m, spacing: 14, [top, bar, diskLegend(m, layout), caption("Unallocated outside partitions: \(Capacity.gb(layout.allUnallocatedBytes))")])
     }
 
     private func containerCard(_ layout: StorageLayout) -> UIView {
@@ -245,8 +228,8 @@ struct Pages {
             layoutRows.append(ChangeRow(m, swatch: nil, title: "Backing partition", before: Capacity.gb(before.backingBytes), after: Capacity.gb(after.backingBytes)))
         }
         for removed in before.partitions where plan.request.replacing.contains(removed.id) {
-            layoutRows.append(ChangeRow(m, swatch: removed.kind == .linux ? Theme.linux : Theme.other,
-                                        title: "\(removed.kind == .linux ? "Linux" : removed.name) · \(removed.bsdName)",
+            layoutRows.append(ChangeRow(m, swatch: removed.isLinux ? Theme.linux : Theme.other,
+                                        title: "\(removed.label) · \(removed.bsdName)",
                                         before: Capacity.gb(removed.blocks * before.sectorSize), after: "erased"))
         }
         let created = after.partitions.filter { candidate in !before.partitions.contains { $0.id == candidate.id } }
@@ -254,10 +237,13 @@ struct Pages {
             layoutRows.append(ChangeRow(m, swatch: Theme.linux, title: "Linux · unformatted", before: "0 GB", after: Capacity.gb(linux.blocks * after.sectorSize)))
         }
         layoutRows.append(ChangeRow(m, swatch: Theme.unallocated, title: "Unallocated", before: Capacity.gb(before.allUnallocatedBytes), after: Capacity.gb(after.allUnallocatedBytes)))
-        let others = before.partitions.filter { $0.kind == .other }.reduce(0) { $0 + $1.blocks * before.sectorSize }
-        if others > 0 { layoutRows.append(LegendRow(m, swatch: Theme.other, title: "Other partitions", value: "\(Capacity.gb(others)) · unchanged", valueColor: Theme.muted)) }
+        for kept in before.partitions where kept.kind != .apfs && !plan.request.replacing.contains(kept.id) {
+            layoutRows.append(LegendRow(m, swatch: kept.isLinux ? Theme.linux : Theme.other, title: "\(kept.label) · \(kept.bsdName)",
+                                        value: "\(Capacity.gb(kept.blocks * before.sectorSize)) · unchanged", valueColor: Theme.muted))
+        }
         let note: String
-        if plan.request.createLinux { note = "The space after APFS becomes an unformatted Linux partition." }
+        if plan.request.createLinux && !plan.request.replacing.isEmpty { note = "The approved partitions after APFS and everything on them are erased. Their space becomes one new, unformatted Linux partition." }
+        else if plan.request.createLinux { note = "The space after APFS becomes an unformatted Linux partition." }
         else if !plan.request.replacing.isEmpty { note = "The approved partitions after APFS and everything on them are erased." }
         else if plan.targetBytes > before.containerBytes { note = "APFS grows into the unallocated space after it." }
         else { note = "Released space stays unallocated. No Linux partition." }
@@ -392,11 +378,11 @@ struct Pages {
             rows.append(LegendRow(m, swatch: Theme.blue, title: "APFS partition", value: Capacity.gb(layout.backingBytes)))
             rows.append(LegendRow(m, swatch: nil, title: "APFS container", value: Capacity.gb(layout.containerBytes), indent: true))
         }
-        for linux in layout.partitions where linux.kind == .linux {
-            rows.append(LegendRow(m, swatch: Theme.linux, title: "Linux · \(linux.bsdName)", value: Capacity.gb(linux.blocks * layout.sectorSize)))
+        for linux in layout.partitions where linux.isLinux {
+            rows.append(LegendRow(m, swatch: Theme.linux, title: "\(linux.label) · \(linux.bsdName)", value: Capacity.gb(linux.blocks * layout.sectorSize)))
         }
         rows.append(LegendRow(m, swatch: Theme.unallocated, title: "Unallocated", value: Capacity.gb(layout.allUnallocatedBytes)))
-        let others = layout.partitions.filter { $0.kind == .other }.reduce(0) { $0 + $1.blocks * layout.sectorSize }
+        let others = layout.partitions.filter { $0.kind == .other && !$0.isLinux }.reduce(0) { $0 + $1.blocks * layout.sectorSize }
         if others > 0 { rows.append(LegendRow(m, swatch: Theme.other, title: "Other partitions", value: "\(Capacity.gb(others)) · unchanged", valueColor: Theme.muted)) }
         var views: [UIView] = [top, Card(m, spacing: 10, rows)]
         var notes: [UIView] = op.completedSteps.compactMap { step -> UIView? in

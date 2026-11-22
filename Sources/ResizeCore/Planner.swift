@@ -80,7 +80,6 @@ public enum Planner {
             guard Set(following.map(\.id)) == Set(request.replacing), following.count == request.replacing.count else {
                 throw ResizeError("The partitions after APFS are not the ones approved for erasing.")
             }
-            guard !request.createLinux else { throw ResizeError("Replacing partitions can't be combined with creating one.") }
             layout.partitions.removeAll { request.replacing.contains($0.id) }
         }
         guard request.requestedBytes > 0, request.requestedBytes <= layout.maximumBytes else {

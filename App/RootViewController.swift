@@ -3,12 +3,17 @@ import ResizeCore
 
 /// One scrolling page per workflow state, the header and error above it, and
 /// the state's action pinned at the bottom (the SwiftUI RootView's structure).
-final class RootViewController: UIViewController {
+final class RootViewController: UIViewController, UIScrollViewDelegate {
     let model: AppModel
     private let scroll = UIScrollView()
     private let page = UIStackView()
     private let footer = UIStackView()
     private let footerBar = UIView()
+    /// The app name or back/cancel row stays put above the scrolling page.
+    private let headerBar = UIView()
+    private let headerSlot = UIStackView()
+    private let headerRule = UIView()
+    private var headerKey = ""
     private var pageIdentity = ""
     /// What the page and footer showed last; they are rebuilt only when it changes,
     /// so a poll that brings nothing new never replaces a view under the user's finger.
@@ -31,7 +36,18 @@ final class RootViewController: UIViewController {
         scroll.keyboardDismissMode = .interactive
         scroll.alwaysBounceVertical = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.delegate = self
         view.addSubview(scroll)
+        headerBar.backgroundColor = Theme.background
+        headerBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(headerBar)
+        headerSlot.axis = .vertical
+        headerSlot.translatesAutoresizingMaskIntoConstraints = false
+        headerBar.addSubview(headerSlot)
+        headerRule.backgroundColor = Theme.line
+        headerRule.alpha = 0
+        headerRule.translatesAutoresizingMaskIntoConstraints = false
+        headerBar.addSubview(headerRule)
         page.axis = .vertical
         page.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(page)
@@ -50,9 +66,24 @@ final class RootViewController: UIViewController {
         let footerWidth = footer.widthAnchor.constraint(equalTo: footerBar.widthAnchor, constant: -2 * metrics.side)
         footerWidth.priority = UILayoutPriority(999)
         let footerCap = footer.widthAnchor.constraint(lessThanOrEqualTo: footerBar.widthAnchor, constant: -2 * metrics.side)
-        sideConstraints = [width, widthCap, footerWidth, footerCap]
+        let headerWidth = headerSlot.widthAnchor.constraint(equalTo: headerBar.widthAnchor, constant: -2 * metrics.side)
+        headerWidth.priority = UILayoutPriority(999)
+        let headerCap = headerSlot.widthAnchor.constraint(lessThanOrEqualTo: headerBar.widthAnchor, constant: -2 * metrics.side)
+        headerTop = headerSlot.topAnchor.constraint(equalTo: guide.topAnchor, constant: metrics.headerTop)
+        sideConstraints = [width, widthCap, footerWidth, footerCap, headerWidth, headerCap]
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: view.topAnchor),
+            headerBar.topAnchor.constraint(equalTo: view.topAnchor),
+            headerBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            headerBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            headerTop!,
+            headerSlot.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor, constant: -10),
+            headerSlot.centerXAnchor.constraint(equalTo: headerBar.centerXAnchor),
+            headerSlot.widthAnchor.constraint(lessThanOrEqualToConstant: metrics.contentWidth), headerWidth, headerCap,
+            headerRule.leadingAnchor.constraint(equalTo: headerBar.leadingAnchor),
+            headerRule.trailingAnchor.constraint(equalTo: headerBar.trailingAnchor),
+            headerRule.bottomAnchor.constraint(equalTo: headerBar.bottomAnchor),
+            headerRule.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+            scroll.topAnchor.constraint(equalTo: headerBar.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: footerBar.topAnchor),
@@ -74,15 +105,21 @@ final class RootViewController: UIViewController {
         render()
     }
     private var sideConstraints: [NSLayoutConstraint] = []
+    private var headerTop: NSLayoutConstraint?
+
+    /// A hairline under the header once the page scrolls beneath it.
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        headerRule.alpha = scrollView.contentOffset.y > -scrollView.adjustedContentInset.top + 1 ? 1 : 0
+    }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
         super.traitCollectionDidChange(previous)
-        pageIdentity = ""; editor = nil
+        pageIdentity = ""; editor = nil; headerKey = ""
         render()
     }
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
-        coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.pageIdentity = ""; self?.editor = nil; self?.render() }
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in self?.pageIdentity = ""; self?.editor = nil; self?.headerKey = ""; self?.render() }
     }
 
     @objc private func keyboard(_ note: Notification) {
@@ -102,6 +139,13 @@ final class RootViewController: UIViewController {
         guard isViewLoaded else { return }
         let m = metrics
         sideConstraints.forEach { $0.constant = -2 * m.side }
+        headerTop?.constant = m.headerTop
+        let header = "\(model.state == .editor || model.state == .review ? model.state.rawValue : "app")|\(m.regular)|\(m.narrow)"
+        if header != headerKey {
+            headerSlot.arrangedSubviews.forEach { $0.removeFromSuperview() }
+            headerSlot.addArrangedSubview(Pages(self, m).header())
+            headerKey = header
+        }
         let changedPage = identity != pageIdentity
         if changedPage { pageIdentity = identity; editor = nil }
         let keys = renderKeys()

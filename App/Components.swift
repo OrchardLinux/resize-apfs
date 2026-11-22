@@ -218,6 +218,8 @@ struct DiskSegment {
     var kind: Kind
     var bytes: Int64
     var title: String
+    /// The list's wording: GPT name, type and device node.
+    var detail: String
     var color: UIColor {
         switch kind {
         case .apfs: return Theme.blue
@@ -231,18 +233,45 @@ struct DiskSegment {
         var cursor = layout.firstUsableLBA
         for part in layout.partitions.sorted(by: { $0.firstLBA < $1.firstLBA }) {
             if part.firstLBA > cursor {
-                result.append(DiskSegment(kind: .unallocated, bytes: (part.firstLBA - cursor) * layout.sectorSize, title: "Unallocated"))
+                result.append(DiskSegment(kind: .unallocated, bytes: (part.firstLBA - cursor) * layout.sectorSize, title: "Unallocated", detail: "Unallocated"))
             }
-            let kind: Kind = part.kind == .apfs ? .apfs : part.kind == .linux ? .linux : .other
-            result.append(DiskSegment(kind: kind, bytes: part.blocks * layout.sectorSize,
-                                      title: part.kind == .apfs ? "APFS" : part.kind == .linux ? "Linux" : part.name))
+            let kind: Kind = part.kind == .apfs ? .apfs : part.isLinux ? .linux : .other
+            result.append(DiskSegment(kind: kind, bytes: part.blocks * layout.sectorSize, title: part.typeName,
+                                      detail: "\(part.label) · \(part.bsdName)"))
             cursor = part.lastLBA + 1
         }
         if cursor <= layout.lastUsableLBA {
-            result.append(DiskSegment(kind: .unallocated, bytes: (layout.lastUsableLBA - cursor + 1) * layout.sectorSize, title: "Unallocated"))
+            result.append(DiskSegment(kind: .unallocated, bytes: (layout.lastUsableLBA - cursor + 1) * layout.sectorSize, title: "Unallocated", detail: "Unallocated"))
         }
         return result
     }
+}
+
+/// The partitions under a disk bar: colour, kind and size.
+func diskLegend(_ m: Metrics, _ layout: StorageLayout) -> UIView {
+    func sum(_ match: (Partition) -> Bool) -> Int64 { layout.partitions.filter(match).reduce(0) { $0 + $1.blocks * layout.sectorSize } }
+    var items: [(UIColor, String)] = [(Theme.blue, "APFS  \(Capacity.gb(layout.backingBytes))")]
+    let linux = sum(\.isLinux), other = sum { $0.kind != .apfs && !$0.isLinux }
+    if linux > 0 { items.append((Theme.linux, "Linux  \(Capacity.gb(linux))")) }
+    if other > 0 { items.append((Theme.other, "Other partitions  \(Capacity.gb(other))")) }
+    if layout.allUnallocatedBytes > 0 { items.append((Theme.unallocated, "Unallocated  \(Capacity.gb(layout.allUnallocatedBytes))")) }
+    let perRow = m.regular ? 4 : 2
+    let rows = stride(from: 0, to: items.count, by: perRow).map { start -> UIView in
+        let row = stack(.horizontal, 16, items[start..<min(start + perRow, items.count)].map { item in
+            stack(.horizontal, 7, [swatch(item.0, size: 8), label(item.1, Theme.font(m.caption), Theme.muted, lines: 1)], align: .center)
+        }, align: .center)
+        row.addArrangedSubview(spacer())
+        return row
+    }
+    return stack(.vertical, 8, rows)
+}
+
+/// Every partition and gap in disk order, as the bar shows them, with its size.
+func partitionList(_ m: Metrics, _ layout: StorageLayout) -> UIView {
+    // Alignment gaps that round to 0 GB would only read as noise.
+    stack(.vertical, 8, DiskSegment.of(layout).filter { $0.kind != .unallocated || $0.bytes >= 50_000_000 }.map { segment in
+        LegendRow(m, swatch: segment.color, title: segment.detail, value: Capacity.gb(segment.bytes))
+    })
 }
 
 /// Proportional bar. Labels go inside wide segments when `labels` is set.
@@ -268,7 +297,20 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         layer.cornerRadius = labels ? 10 : 8
         clipsToBounds = true
         makeSegmentViews()
-        if boundary != nil {
+        configureBoundary()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    /// The drag handle and its gesture exist once a range is known; the editor
+    /// passes the range only in its first update, after building the bar.
+    private func configureBoundary() {
+        guard let boundary else {
+            isAccessibilityElement = true
+            accessibilityTraits = .none
+            accessibilityLabel = segments.map { "\($0.title), \(Capacity.gb($0.bytes))" }.joined(separator: "; ")
+            return
+        }
+        if handle.superview == nil {
             handle.backgroundColor = UIColor(hex: 0x1D4ED8)
             let grip = GripView()
             grip.frame = CGRect(x: 7, y: 0, width: 8, height: 14)
@@ -279,17 +321,15 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
             let pan = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
             pan.delegate = self
             addGestureRecognizer(pan)
-            isAccessibilityElement = true
-            accessibilityTraits = .adjustable
-            accessibilityIdentifier = "sizeSlider"
-            accessibilityLabel = "APFS size in gigabytes"
-            accessibilityValue = String(format: "%.1f GB", boundary!.value)
-        } else {
-            isAccessibilityElement = true
-            accessibilityLabel = segments.map { "\($0.title), \(Capacity.gb($0.bytes))" }.joined(separator: "; ")
+            // A tap moves the boundary too, as a slider's track does.
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(dragged(_:))))
         }
+        isAccessibilityElement = true
+        accessibilityTraits = .adjustable
+        accessibilityIdentifier = "sizeSlider"
+        accessibilityLabel = "APFS size in gigabytes"
+        accessibilityValue = String(format: "%.1f GB", boundary.value)
     }
-    required init?(coder: NSCoder) { fatalError() }
 
     private func makeSegmentViews() {
         views.forEach { $0.removeFromSuperview() }
@@ -305,8 +345,8 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
     func update(layout: StorageLayout, boundary: Boundary?) {
         segments = DiskSegment.of(layout)
         self.boundary = boundary
-        if let boundary { accessibilityValue = String(format: "%.1f GB", boundary.value) }
         makeSegmentViews()
+        configureBoundary()
         setNeedsLayout()
     }
 
@@ -337,14 +377,14 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    @objc private func dragged(_ pan: UIPanGestureRecognizer) {
+    @objc private func dragged(_ pan: UIGestureRecognizer) {
         guard let boundary else { return }
         let point = pan.location(in: self)
         let fraction = Double(min(max(0, point.x / max(1, bounds.width)), 1))
         let total = Double(segments.reduce(0) { $0 + $1.bytes }) / 1e9
         let start = Double(segments.prefix { $0.kind != .apfs }.reduce(0) { $0 + $1.bytes }) / 1e9
         let value = min(max(fraction * total - start, boundary.range.lowerBound), boundary.range.upperBound)
-        boundary.changed((value * 10).rounded() / 10, pan.state == .ended || pan.state == .cancelled)
+        boundary.changed((value * 10).rounded() / 10, pan is UITapGestureRecognizer || pan.state == .ended || pan.state == .cancelled)
     }
     /// Only a sideways drag moves the boundary; vertical swipes scroll the page.
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {

@@ -49,10 +49,17 @@ final class PlannerTests: XCTestCase {
         let same = try Planner.make(replace([linux.id], before.containerBytes), on: before)
         XCTAssertEqual(same.steps, [.checking, .preparing, .shrinkPartition, .verifyLayout])
         XCTAssertEqual(same.after.partitions.count, 2)
-        // Only exactly the partitions after APFS, never with createLinux.
+        // Only exactly the partitions after APFS.
         XCTAssertThrowsError(try Planner.make(replace([UUID()], 28_000_000_000), on: before))
         XCTAssertThrowsError(try Planner.make(replace([linux.id, UUID()], 28_000_000_000), on: before))
-        XCTAssertThrowsError(try Planner.make(PlanRequest(revision: before.revision, requestedBytes: 28_000_000_000, createLinux: true, replacing: [linux.id]), on: before))
+        // Erasing and then creating a fresh Linux partition in the freed space.
+        let fresh = try Planner.make(PlanRequest(revision: before.revision, requestedBytes: before.containerBytes, createLinux: true, replacing: [linux.id]), on: before)
+        XCTAssertEqual(fresh.steps, [.checking, .preparing, .shrinkPartition, .createLinux, .verifyLayout])
+        XCTAssertEqual(fresh.removalStep, .shrinkPartition)
+        let created = try XCTUnwrap(fresh.after.partitions.first { $0.kind == .linux })
+        XCTAssertNotEqual(created.id, linux.id)
+        XCTAssertEqual(created.bsdName, linux.bsdName)
+        XCTAssertEqual(created.lastLBA, before.lastUsableLBA)
         // Old records without the field still decode.
         let old = try JSONDecoder().decode(PlanRequest.self, from: Data(#"{"revision":"\#(before.revision.uuidString)","requestedBytes":1,"createLinux":false}"#.utf8))
         XCTAssertEqual(old.replacing, [])

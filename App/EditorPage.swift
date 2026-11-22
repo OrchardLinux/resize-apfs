@@ -11,6 +11,7 @@ final class EditorPage: UIStackView {
     private let bar: PartitionBar
     private let dynamic = UIStackView()
     private let messageSlot = UIStackView()
+    private let legendSlot = UIStackView()
     private let freeCaption: UILabel
     /// Builds the yellow snapshot offer (Pages.snapshotOffer), set by the root controller.
     var snapshotOffer: ((StorageLayout) -> UIView?)?
@@ -44,7 +45,8 @@ final class EditorPage: UIStackView {
         let captionRow = m.regular ? stack(.horizontal, 16, [freeCaption, use], align: .firstBaseline)
                                    : stack(.vertical, 6, [freeCaption, use], align: .leading)
         messageSlot.axis = .vertical
-        addArrangedSubview(Card(metrics, spacing: 14, [fields, messageSlot, bar, captionRow]))
+        legendSlot.axis = .vertical
+        addArrangedSubview(Card(metrics, spacing: 14, [fields, messageSlot, bar, legendSlot, captionRow]))
         dynamic.axis = .vertical; dynamic.spacing = metrics.sectionGap
         addArrangedSubview(dynamic)
         update()
@@ -66,7 +68,10 @@ final class EditorPage: UIStackView {
         free.update(text: model.freeText, error: false)
         let range = self.range
         let current = Double(model.targetBytes ?? layout.containerBytes) / 1e9
-        bar.update(layout: model.localPlan?.after ?? editing, boundary: PartitionBar.Boundary(
+        let shown = model.localPlan?.after ?? editing
+        legendSlot.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        legendSlot.addArrangedSubview(partitionList(m, shown))
+        bar.update(layout: shown, boundary: PartitionBar.Boundary(
             range: range, value: min(max(current, range.lowerBound), range.upperBound),
             changed: { [model] value, _ in
                 if value >= range.upperBound - 0.05 { model.useAvailable() }
@@ -83,12 +88,12 @@ final class EditorPage: UIStackView {
         dynamic.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if let offer = snapshotOffer?(layout) { dynamic.addArrangedSubview(offer) }
         let following = model.followingPartitions
-        if !following.isEmpty && layout.growthSupported {
+        if model.canEraseFollowing && layout.growthSupported {
             let size = following.reduce(0) { $0 + $1.blocks * layout.sectorSize }
-            let names = following.map { "\($0.kind == .linux ? "Linux partition" : "partition") \($0.bsdName)" }.joined(separator: ", ")
+            let names = following.map { "\($0.label) (\($0.bsdName))" }.joined(separator: ", ")
             dynamic.addArrangedSubview(Card(m, spacing: 0, [OptionRow(m, kind: .checkbox, selected: model.eraseFollowing,
-                title: "Erase \(names) · \(Capacity.gb(size))",
-                detail: "Growing APFS needs the space after it. Everything on \(following.count == 1 ? "this partition" : "these partitions") is erased.") { [model] in
+                title: "Erase \(names) · \(Capacity.gb(size))\(following.count > 1 ? " in total" : "")",
+                detail: "Growing APFS needs the space after it. This erases the Linux installation on \(following.count == 1 ? "this partition" : "these partitions").") { [model] in
                     model.setEraseFollowing(!model.eraseFollowing)
                 }]))
         }

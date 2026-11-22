@@ -23,6 +23,31 @@ public struct Partition: Codable, Equatable, Sendable {
     }
 }
 
+extension Partition {
+    /// Linux partition types by the Discoverable Partitions Specification, as
+    /// Orchard's installer writes them (root ARM64, XBOOTLDR) or generic Linux data.
+    static let linuxTypeNames: [String: String] = [
+        linuxTypeGUID: "Linux",
+        "B921B045-1DF0-41C3-AF44-4C6F280D3FAE": "Linux root",
+        "BC13C2FF-59E6-4262-A352-B275FD6F7172": "Linux boot",
+        "933AC7E1-2EB4-4F13-B844-0E14E2AEF915": "Linux home",
+        "0657FD6D-A4AB-43C4-84E5-0933C84B4F4F": "Linux swap",
+    ]
+    /// Any Linux partition, whichever Linux type it was created with.
+    public var isLinux: Bool { kind == .linux || Partition.linuxTypeNames[typeGUID.uppercased()] != nil }
+    /// What the user calls it: "Linux root", "APFS", or the GPT name for anything else.
+    public var typeName: String {
+        if kind == .apfs { return "APFS" }
+        if let name = Partition.linuxTypeNames[typeGUID.uppercased()] { return name }
+        return name.isEmpty ? "Other partition" : name
+    }
+    /// The GPT name with the type where they differ: "omarchy-a · Linux root".
+    public var label: String {
+        let type = typeName
+        return name.isEmpty || name == type || kind == .apfs ? type : "\(name) · \(type)"
+    }
+}
+
 /// The system volume's snapshot that checkra1n's Restore System reverts to
 /// ("orig-fs", iOS 12-14). It can keep APFS from shrinking: its blocks stay
 /// allocated wherever they sit. nil where there is none to manage (iOS 15+

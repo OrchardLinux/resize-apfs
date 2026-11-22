@@ -169,6 +169,20 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["operationCompleted"].waitForExistence(timeout: 20))
     }
 
+    /// The bar's boundary is the size slider: dragging it changes the size.
+    func testDraggingTheBarChangesTheSize() throws {
+        try reset("freeSpace")
+        let app = XCUIApplication()
+        openEditor(app)
+        let slider = app.descendants(matching: .any)["sizeSlider"]
+        XCTAssertTrue(slider.waitForExistence(timeout: 5))
+        let field = app.textFields["targetSize"]
+        let before = field.value as? String
+        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: slider.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)))
+        XCTAssertNotEqual(field.value as? String, before)
+    }
+
     func testPartitionFailureReturnsToInspectableState() throws {
         try reset("partitionError")
         let app = XCUIApplication()

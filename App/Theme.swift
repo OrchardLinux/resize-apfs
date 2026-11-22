@@ -48,6 +48,8 @@ struct Metrics {
         narrow = !regular && width <= 330
     }
     var side: CGFloat { regular ? 32 : (narrow ? 12 : 16) }
+    /// Space between the status bar and the header.
+    var headerTop: CGFloat { regular ? 20 : 14 }
     var cardPadding: CGFloat { regular ? 24 : 16 }
     var sectionGap: CGFloat { regular ? 24 : 18 }
     var title: CGFloat { regular ? 30 : (narrow ? 24 : 28) }
