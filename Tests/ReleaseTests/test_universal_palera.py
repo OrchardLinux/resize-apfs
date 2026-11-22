@@ -215,7 +215,7 @@ class UniversalPaleraTests(unittest.TestCase):
 
         self.probes.side_effect = run
         with patch.object(launcher, 'ROOT', self.root), patch.object(launcher, 'verify_package', return_value=b'package checksums'), \
-                patch('launcher.sys.platform', 'darwin'), patch.object(sys, 'argv', ['resize-apfs', 'prepare']), \
+                patch('launcher.sys.platform', 'darwin'), patch.object(sys, 'argv', ['resize-apfs', 'prepare', '--ios', '15']), \
                 contextlib.redirect_stdout(io.StringIO()):
             for host in ('arm64', 'x86_64', 'arm64'):
                 with patch('palera.platform.machine', return_value=host):

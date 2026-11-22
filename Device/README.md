@@ -96,3 +96,18 @@ Binaries are ad-hoc signed. Release packaging checks signatures, file hashes and
 package contents.
 Generated overlays are audited read-only for root ownership, payload hashes,
 configuration and disabled network listeners.
+
+## iOS 12-14 (checkra1n route)
+
+`scripts/checkra1n_route.py` copies `out/device-ios12/ResizeAPFS.app` to
+`/Applications` and `out/device-ios12/resize-helper` to `/var/root/ResizeAPFS/session`
+over checkra1n's SSH server, for one session only. On the device it uses only
+`sh`, `mkdir`, `cat`, `chmod`, `rm` and `kill`. The iOS 12-14 helper must accept:
+
+- `--register-app PATH` / `--unregister-app PATH`: add the app to, or remove it from, the
+  home screen (what `uicache` does), exit 0 on success.
+- `--session --allow-writes --ui-path PATH`: serve the app in the foreground as on the
+  palera1n route, trusting the app executable at PATH instead of the overlay's.
+- `--operation-active`: exit 0 while a resize it started is still running, else 1.
+
+The app and this helper are built for iOS 12 with the UIKit app (not yet part of a release).

@@ -48,7 +48,8 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
         shutil.copy2(ROOT / file, package / file)
     scripts = ['launcher.py', 'palera.py', 'boot_device.py', 'boot-device.sh', 'build-overlay.py',
                'extract-binpack.py', 'overlay_linux.py', 'overlay_macos.py', 'image_format.py',
-               'hfs-root-ownership.py', 'audit-overlay.py', 'build-linux-tools.sh']
+               'hfs-root-ownership.py', 'audit-overlay.py', 'build-linux-tools.sh',
+               'tools.py', 'usbmux.py', 'checkra1n_route.py']
     for script in scripts:
         shutil.copy2(ROOT / 'scripts' / script, package / 'scripts' / script)
     for file in ['upstream.lock.json', 'dev.omarchy.resize-apfs.plist', 'README.md']:
@@ -57,6 +58,9 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
     for relative, expected in manifest['files'].items():
         mode = expected.get('mode', 0o755 if relative in ['ResizeAPFS.app/ResizeAPFS', 'resize-helper', 'resize-overlay-entry'] else 0o644)
         (package / 'out/device' / relative).chmod(mode)
+    # The iOS 12-14 app and helper for the checkra1n route, once a build provides them.
+    if (ROOT / 'out/device-ios12').is_dir():
+        shutil.copytree(ROOT / 'out/device-ios12', package / 'out/device-ios12')
     shutil.copytree(ROOT / 'docs/screenshots', package / 'docs/screenshots')
     shutil.copytree(ROOT / 'third_party/libdmg-hfsplus', package / 'third_party/libdmg-hfsplus')
     for arch in ['x86_64', 'arm64']:
