@@ -110,4 +110,9 @@ over checkra1n's SSH server, for one session only. On the device it uses only
   palera1n route, trusting the app executable at PATH instead of the overlay's.
 - `--operation-active`: exit 0 while a resize it started is still running, else 1.
 
-The app and this helper are built for iOS 12 with the UIKit app (not yet part of a release).
+`scripts/build-device-ios12.sh` builds both for iOS 12.0 and later (not yet part of a release).
+iOS 12.0 and 12.1 have no Swift runtime, so the app bundles Apple's back-deployment runtime in
+`ResizeAPFS.app/Frameworks`; both binaries search `/usr/lib/swift` first, so iOS 12.2 and later
+use the system's. The helper's second search path is `/Applications/ResizeAPFS.app/Frameworks`:
+on iOS 12.0-12.1 every helper command needs the app installed, which the route guarantees by
+copying the app before the first helper command and removing it after the last.

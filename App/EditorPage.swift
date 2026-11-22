@@ -63,7 +63,7 @@ final class EditorPage: UIStackView {
         target.update(text: model.targetText, error: outOfRange)
         free.update(text: model.freeText, error: false)
         let range = self.range
-        let current = Double(Capacity.parseGB(model.targetText) ?? layout.containerBytes) / 1e9
+        let current = Double(model.targetBytes ?? layout.containerBytes) / 1e9
         bar.update(layout: model.localPlan?.after ?? editing, boundary: PartitionBar.Boundary(
             range: range, value: min(max(current, range.lowerBound), range.upperBound),
             changed: { [model] value, _ in
@@ -103,7 +103,7 @@ final class EditorPage: UIStackView {
 
     /// Why the typed size can't be reviewed, in the user's terms where possible.
     private func message(_ layout: StorageLayout) -> String? {
-        guard let bytes = Capacity.parseGB(model.targetText) else { return model.editorMessage }
+        guard let bytes = model.targetBytes else { return model.editorMessage }
         if let minimum = layout.minimumContainerBytes, bytes < minimum, bytes < layout.containerBytes {
             return "Can’t go below \(Capacity.gb(minimum))."
         }

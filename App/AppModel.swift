@@ -15,6 +15,10 @@ final class AppModel {
     private(set) var busy = false
     private(set) var targetText = ""
     private(set) var freeText = ""
+    /// The exact size behind a target the app filled in itself (current size,
+    /// "Use available space", or derived from the free space). The field shows it
+    /// rounded like every other size; typing in the field drops it.
+    private var targetExact: Int64?
     private(set) var createLinux = false
     /// The partitions after APFS the user approved erasing (all of them, or none).
     private(set) var eraseFollowing = false
@@ -59,14 +63,26 @@ final class AppModel {
         if eraseFollowing { let end = layout.apfs.lastLBA; layout.partitions.removeAll { $0.firstLBA > end } }
         return layout
     }
+    /// The requested size: the exact derived value, or what was typed. A typed
+    /// value within the display rounding (0.05 GB) of a limit means that limit,
+    /// so the "31.6" the app shows for 31.599980544 GB can be typed back.
+    var targetBytes: Int64? {
+        if let targetExact { return targetExact }
+        guard let typed = Capacity.parseGB(targetText) else { return nil }
+        guard let layout = editingLayout else { return typed }
+        let tolerance: Int64 = 50_000_000
+        if typed > layout.maximumBytes && typed - layout.maximumBytes < tolerance { return layout.maximumBytes }
+        if let minimum = layout.minimumContainerBytes, typed < minimum, minimum - typed < tolerance { return minimum }
+        return typed
+    }
     var request: PlanRequest? {
-        guard let layout, let bytes = Capacity.parseGB(targetText) else { return nil }
+        guard let layout, let bytes = targetBytes else { return nil }
         return PlanRequest(revision: layout.revision, requestedBytes: bytes,
                            createLinux: createLinux && canCreateLinuxPartition,
                            replacing: eraseFollowing ? followingPartitions.map(\.id) : [])
     }
     var canCreateLinuxPartition: Bool {
-        guard !eraseFollowing, let layout, let bytes = Capacity.parseGB(targetText) else { return false }
+        guard !eraseFollowing, let layout, let bytes = targetBytes else { return false }
         let candidate = PlanRequest(revision: layout.revision, requestedBytes: bytes, createLinux: true)
         return (try? Planner.make(candidate, on: layout)) != nil
     }
@@ -146,16 +162,35 @@ final class AppModel {
         guard let layout else { return }
         do {
             try layout.validate(); try machine.edit()
-            targetText = Capacity.input(layout.containerBytes)
-            freeText = Capacity.input(layout.maximumBytes - layout.containerBytes)
-            createLinux = false; eraseFollowing = false; reviewedPlan = nil; editRevision = layout.revision; error = nil
+            createLinux = false; eraseFollowing = false
+            setDerivedTarget(layout.containerBytes, notifying: false)
+            reviewedPlan = nil; editRevision = layout.revision; error = nil
         } catch { self.error = error.localizedDescription }
         notify()
     }
+    /// A size as the fields show it: at most one decimal, "." as in what the fields accept.
+    static func display(_ bytes: Int64) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.usesGroupingSeparator = false
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        formatter.roundingMode = .halfEven
+        return formatter.string(from: NSNumber(value: Double(bytes) / 1_000_000_000)) ?? Capacity.input(bytes)
+    }
+    private func updateFree() {
+        if let bytes = targetBytes, let layout = editingLayout { freeText = Self.display(max(0, layout.maximumBytes - bytes)) }
+    }
+    private func setDerivedTarget(_ bytes: Int64, notifying: Bool = true) {
+        targetExact = bytes; targetText = Self.display(bytes); reviewedPlan = nil; error = nil
+        updateFree()
+        if !canCreateLinuxPartition { createLinux = false }
+        if notifying { notify() }
+    }
     func setTarget(_ text: String) {
-        targetText = text; reviewedPlan = nil; error = nil
-        if let bytes = Capacity.parseGB(text), let layout = editingLayout {
-            freeText = Capacity.input(max(0, layout.maximumBytes - bytes))
+        targetText = text; targetExact = nil; reviewedPlan = nil; error = nil
+        if Capacity.parseGB(text) != nil {
+            updateFree()
             if !canCreateLinuxPartition { createLinux = false }
         }
         notify()
@@ -163,12 +198,12 @@ final class AppModel {
     func setFree(_ text: String) {
         freeText = text; reviewedPlan = nil; error = nil
         if let bytes = Capacity.parseGB(text), let layout = editingLayout, bytes <= layout.maximumBytes {
-            targetText = Capacity.input(layout.maximumBytes - bytes)
+            targetExact = layout.maximumBytes - bytes; targetText = Self.display(layout.maximumBytes - bytes)
             if !canCreateLinuxPartition { createLinux = false }
-        } else { targetText = "" }
+        } else { targetText = ""; targetExact = nil }
         notify()
     }
-    func useAvailable() { if let layout = editingLayout { setTarget(Capacity.input(layout.maximumBytes)) } }
+    func useAvailable() { if let layout = editingLayout { setDerivedTarget(layout.maximumBytes) } }
     func setCreateLinux(_ value: Bool) {
         createLinux = value && canCreateLinuxPartition; reviewedPlan = nil
         notify()
@@ -177,8 +212,10 @@ final class AppModel {
         guard !followingPartitions.isEmpty else { return }
         eraseFollowing = value
         if value { createLinux = false }
-        // The limit changed; keep the typed size and recompute the free space.
-        setTarget(targetText)
+        // The limit changed; keep the size and recompute the free space.
+        reviewedPlan = nil
+        updateFree()
+        notify()
     }
     func back() { machine.back(); error = nil; notify() }
     func cancelEditing() {

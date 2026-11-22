@@ -132,7 +132,7 @@ final class RootViewController: UIViewController {
         var snapshot = model.snapshot
         snapshot?.capturedAt = Date(timeIntervalSince1970: 0)
         let encoded = snapshot.flatMap { try? JSONEncoder().encode($0) }.map { $0.base64EncodedString() } ?? "-"
-        let editing = [model.targetText, model.freeText, "\(model.createLinux)", "\(model.eraseFollowing)", model.reviewedPlan?.id.uuidString ?? "-"]
+        let editing = [model.targetText, model.freeText, model.targetBytes.map(String.init) ?? "-", "\(model.createLinux)", "\(model.eraseFollowing)", model.reviewedPlan?.id.uuidString ?? "-"]
         let page = ([model.state.rawValue, model.error ?? "-", "\(model.busy)", "\(model.connectionOK)", model.connectionMessage ?? "-", encoded] + editing).joined(separator: "|")
         let footer = [model.state.rawValue, "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
                       model.operation?.status.rawValue ?? "-"].joined(separator: "|")

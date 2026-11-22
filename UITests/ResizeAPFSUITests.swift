@@ -57,7 +57,11 @@ final class ResizeAPFSUITests: XCTestCase {
         try reset("normal", scale: 1.5)
         let app = XCUIApplication()
         openEditor(app)
+        // Sizes show rounded like everywhere else; the exact values stay behind them.
+        XCTAssertEqual(app.textFields["targetSize"].value as? String, "31.6")
+        XCTAssertEqual(app.textFields["freeAfter"].value as? String, "0")
         enterSize("24", app: app)
+        XCTAssertEqual(app.textFields["freeAfter"].value as? String, "7.6")
         app.swipeUp()
         XCTAssertTrue(app.buttons["createLinux"].waitForExistence(timeout: 3))
         app.buttons["createLinux"].tap()
