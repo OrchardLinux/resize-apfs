@@ -61,6 +61,7 @@ final class HelperServer: @unchecked Sendable {
     }
 
     func run() {
+        AppOpener(executable: expectedUIPath, registerWithUICache: !sessionApp).start()
         Thread { [engine] in
             while true {
                 engine.refresh()

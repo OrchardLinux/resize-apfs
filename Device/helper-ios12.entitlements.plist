@@ -13,4 +13,8 @@
     <key>com.apple.private.MobileContainerManager.allowed</key><true/>
     <!-- Removing and taking checkra1n's orig-fs snapshot (fs_snapshot_delete/create). -->
     <key>com.apple.private.vfs.snapshot</key><true/>
+    <!-- Opening the app once the helper starts (LaunchServices, SpringBoard). -->
+    <key>com.apple.springboard.launchapplications</key><true/>
+    <key>com.apple.frontboard.launchapplications</key><true/>
+    <key>com.apple.springboard.opensensitiveurl</key><true/>
 </dict></plist>

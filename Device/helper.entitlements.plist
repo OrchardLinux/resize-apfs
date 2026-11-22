@@ -7,4 +7,8 @@
     <key>com.apple.private.security.disk-device-access</key><true/>
     <key>com.apple.security.iokit-user-client-class</key>
     <array><string>AppleAPFSUserClient</string></array>
+    <!-- Opening the app once the helper starts (LaunchServices, SpringBoard). -->
+    <key>com.apple.springboard.launchapplications</key><true/>
+    <key>com.apple.frontboard.launchapplications</key><true/>
+    <key>com.apple.springboard.opensensitiveurl</key><true/>
 </dict></plist>

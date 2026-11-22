@@ -20,4 +20,7 @@ int raf_peer_is_executable(int fd, const char *expected_path);
 int raf_list_snapshots(const char *mount_path, char *buffer, size_t buffer_size);
 int raf_delete_snapshot(const char *mount_path, const char *name);
 int raf_create_snapshot(const char *mount_path, const char *name);
+/* 1 when a process whose name starts with `name` (at most 15 characters, as the kernel
+   keeps it) runs, 0 when none does, -1 when the process list cannot be read. */
+int raf_process_running(const char *name);
 #endif
