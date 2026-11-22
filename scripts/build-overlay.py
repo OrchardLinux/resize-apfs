@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a Resize APFS overlay using the installed palera1n."""
+"""Build a Resize APFS overlay from a palera1n executable."""
 import argparse
 import hashlib
 import json
@@ -12,6 +12,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--enable-writes', action='store_true', help='Enable changes reviewed and confirmed in the app')
 parser.add_argument('--output', type=pathlib.Path)
+parser.add_argument('--palera1n', required=True, help='the palera1n executable (tools.provide)')
 args = parser.parse_args()
 mode = 'write' if args.enable_writes else 'inspect'
 destination = (args.output or ROOT / f'out/resize-apfs-{mode}.dmg').resolve()
@@ -25,7 +26,7 @@ for required in ['ResizeAPFS.app/ResizeAPFS', 'resize-helper', 'resize-overlay-e
 destination.parent.mkdir(parents=True, exist_ok=True)
 base = destination.with_name(destination.stem + '-base.dmg')
 try:
-    subprocess.run([sys.executable, str(ROOT / 'scripts/extract-binpack.py'), '--output', str(base)], check=True)
+    subprocess.run([sys.executable, str(ROOT / 'scripts/extract-binpack.py'), '--palera1n', args.palera1n, '--output', str(base)], check=True)
     producer = json.loads(base.with_suffix('.json').read_text())
     if sys.platform == 'darwin':
         from overlay_macos import build

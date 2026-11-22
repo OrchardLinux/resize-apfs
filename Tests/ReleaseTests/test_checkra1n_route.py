@@ -61,6 +61,21 @@ class ToolTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {'CHECKRA1N': str(own)}):
             self.assertEqual(tools.provide('checkra1n', self.root, fetch=lambda *a: self.fail('downloaded')), own.resolve())
 
+    def test_a_palera1n_in_path_is_never_used(self):
+        data = b'#!/bin/sh\necho pinned\n'
+        installed = self.root / 'bin'
+        installed.mkdir()
+        (installed / 'palera1n').write_text('#!/bin/sh\necho installed\n')
+        (installed / 'palera1n').chmod(0o755)
+        fetched = []
+        with mock.patch.dict(tools.PINS, {('palera1n', *tools.host()): pin_for(data)}), \
+                mock.patch.dict(os.environ, {'PATH': str(installed) + os.pathsep + os.environ['PATH']}):
+            os.environ.pop('PALERA1N', None)
+            path = tools.provide('palera1n', self.root / 'cache',
+                                 fetch=lambda url, dest, size: (fetched.append(url), dest.write_bytes(data)))
+        self.assertEqual(len(fetched), 1)
+        self.assertTrue(path.is_relative_to(self.root / 'cache'))
+
     def test_palera1n_pins_match_the_graphical_installer(self):
         candidates = [p / 'orchard2/crates/flow/src/assets.rs' for p in ROOT.parents]
         assets = next((c for c in candidates if c.is_file()), None)

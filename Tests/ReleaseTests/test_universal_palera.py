@@ -41,7 +41,6 @@ class UniversalPaleraTests(unittest.TestCase):
         self.fat = universal([thin(self.intel, X86_64), thin(self.arm)])
         self.binary.write_bytes(self.fat)
         contexts.enter_context(patch('palera.platform.machine', return_value='arm64'))
-        contexts.enter_context(patch.dict(os.environ, PALERA1N=str(self.binary)))
         # Only capability probes are simulated. Never run a fixture or palera1n.
         self.probes = contexts.enter_context(patch('palera.subprocess.run', side_effect=self.probe))
         self.execv = contexts.enter_context(patch('os.execv', side_effect=AssertionError('Must not boot')))
@@ -53,7 +52,7 @@ class UniversalPaleraTests(unittest.TestCase):
         return subprocess.CompletedProcess(argv, 0, stdout=text, stderr='')
 
     def extract(self):
-        with patch.object(sys, 'argv', ['extract-binpack.py', '--output', str(self.output)]), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(sys, 'argv', ['extract-binpack.py', '--palera1n', str(self.binary), '--output', str(self.output)]), contextlib.redirect_stdout(io.StringIO()):
             runpy.run_path(str(ROOT / 'scripts/extract-binpack.py'), run_name='__main__')
         return json.loads(self.output.with_suffix('.json').read_text())
 
@@ -67,7 +66,7 @@ class UniversalPaleraTests(unittest.TestCase):
 
     def boot_command(self):
         with patch('boot_device.sys.platform', 'darwin'):
-            return command(self.output, discover())
+            return command(self.output, discover(self.binary))
 
     def test_selects_host_slice_in_all_fat_encodings(self):
         for endian in ('>', '<'):
@@ -168,12 +167,12 @@ class UniversalPaleraTests(unittest.TestCase):
             with self.subTest(message=message):
                 self.binary.write_bytes(data)
                 with self.assertRaisesRegex(ValueError, message):
-                    discover()
+                    discover(self.binary)
         self.probes.assert_not_called()
 
     def test_palera1n_override_version_and_capability_checks(self):
-        self.assertEqual(discover()['path'], str(self.binary))
-        self.assertEqual(discover()['rootlessArguments'], ['--rootless'])
+        self.assertEqual(discover(self.binary)['path'], str(self.binary))
+        self.assertEqual(discover(self.binary)['rootlessArguments'], ['--rootless'])
         for version, help_text, message in [('Build tag: v2.3', '--override-overlay', '2.4 or later'),
                                           ('unknown', '--override-overlay', 'Cannot determine'),
                                           ('Build tag: v2.4', '--rootless', 'custom overlays'),
@@ -181,7 +180,7 @@ class UniversalPaleraTests(unittest.TestCase):
             self.probes.side_effect = [subprocess.CompletedProcess([], 0, version, ''),
                                        subprocess.CompletedProcess([], 0, help_text, '')]
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
-                discover()
+                discover(self.binary)
 
     def test_prerelease_version_banner_is_parsed(self):
         # palera1n 3.0.0 beta 3 (used for J96) prints this instead of a build tag.
@@ -190,7 +189,7 @@ class UniversalPaleraTests(unittest.TestCase):
         self.assertEqual(version_from(banner), (3, 0, 0))
         self.probes.side_effect = [subprocess.CompletedProcess([], 0, banner, ''),
                                    subprocess.CompletedProcess([], 0, '--rootless --override-overlay', '')]
-        self.assertEqual(discover()['rootlessArguments'], ['--rootless'])
+        self.assertEqual(discover(self.binary)['rootlessArguments'], ['--rootless'])
 
     def test_prepare_to_boot_command_without_execution(self):
         self.prepare()
@@ -216,6 +215,7 @@ class UniversalPaleraTests(unittest.TestCase):
         self.probes.side_effect = run
         with patch.object(launcher, 'ROOT', self.root), patch.object(launcher, 'verify_package', return_value=b'package checksums'), \
                 patch('launcher.sys.platform', 'darwin'), patch.object(sys, 'argv', ['resize-apfs', 'prepare', '--ios', '15']), \
+                patch.dict(os.environ, PALERA1N=str(self.binary)), \
                 contextlib.redirect_stdout(io.StringIO()):
             for host in ('arm64', 'x86_64', 'arm64'):
                 with patch('palera.platform.machine', return_value=host):

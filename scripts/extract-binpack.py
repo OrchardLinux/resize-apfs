@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract a structurally compatible overlay from the installed palera1n."""
+"""Extract a structurally compatible overlay from a palera1n executable."""
 import argparse
 import hashlib
 import json
@@ -10,7 +10,7 @@ from image_format import HFSImage, read_udif, require
 from palera import discover, embedded_images
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--palera1n')
+parser.add_argument('--palera1n', required=True, help='the palera1n executable (tools.provide)')
 parser.add_argument('--output', type=pathlib.Path, required=True)
 args = parser.parse_args()
 try:

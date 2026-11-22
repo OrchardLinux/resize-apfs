@@ -1,10 +1,8 @@
 """Discover the installed palera1n and its overlay capabilities."""
 import hashlib
-import os
 import pathlib
 import platform
 import re
-import shutil
 import struct
 import subprocess
 
@@ -81,11 +79,9 @@ def version_from(text):
     raise ValueError('Cannot determine the palera1n version. Install the official CLI release.')
 
 
-def discover(selected=None):
-    selected = selected or os.environ.get('PALERA1N') or shutil.which('palera1n')
-    if not selected:
-        raise ValueError('Install palera1n separately and put it in PATH (or set PALERA1N).')
-    binary = pathlib.Path(shutil.which(selected) or selected).resolve()
+def discover(path):
+    """Check the palera1n at `path` (from tools.provide) and describe it."""
+    binary = pathlib.Path(path).resolve()
     data = binary.read_bytes()
     executable_slice(data)  # Diagnose malformed/unsupported fat metadata before executing it.
     result = subprocess.run([str(binary), '--version'], capture_output=True, text=True, timeout=15)

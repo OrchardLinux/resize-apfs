@@ -36,7 +36,8 @@ if __name__ == '__main__':
     parser.add_argument('--boot', action='store_true')
     args = parser.parse_args()
     try:
-        argv = command(args.overlay, discover())
+        import tools
+        argv = command(args.overlay, discover(tools.provide('palera1n')))
         if not args.boot:
             print('Boot command:', shlex.join(argv))
             print('Rerun with --boot to start palera1n.')

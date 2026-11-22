@@ -67,8 +67,6 @@ def main():
             checkra1n_route.run(executable)
         return
     palera1n = pinned.provide('palera1n')
-    # The overlay scripts find palera1n through PALERA1N: they must use this one, not one in PATH.
-    os.environ['PALERA1N'] = str(palera1n)
     os.environ.setdefault('RA1N_CLI', '1')  # palera1n 3.0 starts its terminal interface only when asked
     info = discover(str(palera1n))
     if sys.platform.startswith('linux'):
@@ -92,7 +90,7 @@ def main():
             print('Preparing the boot files...', flush=True)
         with log.open('w') as stream:
             if not overlay.is_file():
-                result = subprocess.run([sys.executable, str(ROOT / 'scripts/build-overlay.py'), '--enable-writes', '--output', str(overlay)],
+                result = subprocess.run([sys.executable, str(ROOT / 'scripts/build-overlay.py'), '--enable-writes', '--palera1n', str(palera1n), '--output', str(overlay)],
                                         cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
             else:
                 result = subprocess.run([sys.executable, str(ROOT / 'scripts/audit-overlay.py'), str(overlay)],

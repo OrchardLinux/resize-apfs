@@ -17,7 +17,7 @@ class BootValidationTests(unittest.TestCase):
             root = pathlib.Path(temporary)
             (root / 'scripts').mkdir()
             (root / 'bin').mkdir()
-            for name in ['boot-device.sh', 'boot_device.py', 'palera.py', 'image_format.py']:
+            for name in ['boot-device.sh', 'boot_device.py', 'palera.py', 'image_format.py', 'tools.py']:
                 shutil.copy2(ROOT / 'scripts' / name, root / 'scripts' / name)
             footer = bytearray(512)
             footer[:4] = b'koly'
@@ -42,7 +42,8 @@ class BootValidationTests(unittest.TestCase):
                 },
             }
             image.with_suffix('.json').write_text(json.dumps(manifest))
-            env = dict(os.environ, PATH=str(root / 'bin') + os.pathsep + os.environ['PATH'])
+            # A developer's own palera1n: no download.
+            env = dict(os.environ, PALERA1N=str(palera))
             # No --boot: validation must never execute palera1n.
             return subprocess.run(['bash', str(root / 'scripts/boot-device.sh'), '--overlay', str(image)],
                                   env=env, capture_output=True, text=True)
