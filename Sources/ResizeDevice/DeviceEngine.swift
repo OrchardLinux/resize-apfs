@@ -121,13 +121,24 @@ public final class DeviceEngine: @unchecked Sendable {
             let plan = try Planner.make(request, on: fresh.layout)
             // Validate that the intended slot and every raw entry are supported before
             // offering a review, not only after the long APFS resize has finished.
-            let addition = plan.after.partitions.first { candidate in !fresh.layout.partitions.contains(where: { $0.id == candidate.id }) }
-            _ = try fresh.gpt.changingEnd(partitionID: fresh.layout.backingPartitionID,
-                                         to: plan.after.apfs.lastLBA, adding: addition)
+            try DeviceEngine.preflight(plan, gpt: fresh.gpt, layout: fresh.layout)
             if pending.count >= 16 { pending.removeAll() }
             pending[plan.id] = (plan, fresh.gpt)
             accept(fresh)
             return plan
+        }
+    }
+
+    /// The GPT writes `plan` makes, tried on the current table in the order the
+    /// worker makes them: the boundary move that also removes the partitions
+    /// approved for erasing, then the new Linux entry. Without the removal, a
+    /// growth over those partitions would be refused here as an overlap.
+    public static func preflight(_ plan: ResizePlan, gpt: GPTImage, layout: StorageLayout) throws {
+        let addition = plan.after.partitions.first { candidate in !layout.partitions.contains(where: { $0.id == candidate.id }) }
+        let moved = try gpt.changingEnd(partitionID: layout.backingPartitionID, to: plan.after.apfs.lastLBA,
+                                        removing: plan.request.replacing)
+        if let addition {
+            _ = try moved.changingEnd(partitionID: layout.backingPartitionID, to: plan.after.apfs.lastLBA, adding: addition)
         }
     }
 

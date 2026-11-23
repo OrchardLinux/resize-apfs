@@ -175,6 +175,36 @@ final class DiskBackendTests: XCTestCase {
             }
         }
     }
+    /// The review's pre-check accepts growing over the partitions approved for
+    /// erasing, and erasing them to create a new Linux partition.
+    func testPreflightAcceptsErasingFollowingPartitions() throws {
+        for sector: Int64 in [512, 4096] {
+            try withFixture(sector) { fixture in
+                let start = try DeviceInspector.inspect(fixture.source)
+                let setup = try Planner.make(PlanRequest(revision: start.layout.revision, requestedBytes: fixture.containerBytes, createLinux: true), on: start.layout)
+                for step in [OperationStep.shrinkPartition, .createLinux] {
+                    let now = try DeviceInspector.inspect(fixture.source)
+                    XCTAssertEqual(DeviceWorker.execute(DeviceJob(source: fixture.source, step: step, plan: setup,
+                                                                  expectedGPT: now.gpt, expectedContainerBytes: fixture.containerBytes)).outcome, .success)
+                }
+                let before = try DeviceInspector.inspect(fixture.source)
+                let linux = try XCTUnwrap(before.layout.partitions.first { $0.kind == .linux })
+                var layout = before.layout
+                layout.growthSupported = true
+                let grow = try Planner.make(PlanRequest(revision: layout.revision, requestedBytes: fixture.partitionBytes,
+                                                        createLinux: false, replacing: [linux.id]), on: layout)
+                XCTAssertNoThrow(try DeviceEngine.preflight(grow, gpt: before.gpt, layout: layout))
+                let fresh = try Planner.make(PlanRequest(revision: layout.revision, requestedBytes: layout.containerBytes,
+                                                         createLinux: true, replacing: [linux.id]), on: layout)
+                XCTAssertNoThrow(try DeviceEngine.preflight(fresh, gpt: before.gpt, layout: layout))
+                // Growing over a partition that is not approved stays refused.
+                var unapproved = grow
+                unapproved.request.replacing = []
+                XCTAssertThrowsError(try DeviceEngine.preflight(unapproved, gpt: before.gpt, layout: layout))
+            }
+        }
+    }
+
     func testErasingFollowingPartitionsThenCreatingLinux() throws {
         for sector: Int64 in [512, 4096] {
             try withFixture(sector) { fixture in
