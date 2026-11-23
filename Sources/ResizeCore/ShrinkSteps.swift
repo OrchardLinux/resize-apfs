@@ -184,7 +184,7 @@ public struct APFSStepProgress: Codable, Equatable, Sendable {
 /// the new end, so the pause grows with the data moved and the storage speed,
 /// not with the size removed. Smaller calls keep each pause short.
 public enum ShrinkSteps {
-    public static let startingBudget: Int64 = 2 << 30
+    public static let startingBudget: Int64 = 1 << 30
     public static let minimumBudget: Int64 = 256 << 20
     /// Container bytes per step when the space map cannot be used, at the
     /// starting budget; scaled down with the budget when calls are slow.

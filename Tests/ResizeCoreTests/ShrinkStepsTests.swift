@@ -42,9 +42,9 @@ final class ShrinkStepsTests: XCTestCase {
     func testDenseDataIsSplitByTheBudget() throws {
         let space = try map(64 * GiB) { _ in 1 }
         let targets = plannedTargets(from: 64 * GiB, to: 16 * GiB, map: space)
-        XCTAssertEqual(targets.first, 62 * GiB)
-        XCTAssertEqual(targets.count, 24)
-        XCTAssertEqual(ShrinkSteps.count(from: 64 * GiB, to: 16 * GiB, map: space, budget: ShrinkSteps.startingBudget), 24)
+        XCTAssertEqual(targets.first, 63 * GiB)
+        XCTAssertEqual(targets.count, 48)
+        XCTAssertEqual(ShrinkSteps.count(from: 64 * GiB, to: 16 * GiB, map: space, budget: ShrinkSteps.startingBudget), 48)
         var previous = 64 * GiB
         for target in targets {
             XCTAssertLessThanOrEqual(space.allocatedBytes(from: target, to: previous), ShrinkSteps.startingBudget)
@@ -56,10 +56,10 @@ final class ShrinkStepsTests: XCTestCase {
         // Dense top 1 GiB, empty below it down to 20 GiB, dense again under that.
         let space = try map(64 * GiB) { $0 >= 504 || $0 < 160 ? 1 : 0 }
         let targets = plannedTargets(from: 64 * GiB, to: 16 * GiB, map: space)
-        // 1 GiB at the top plus 1 GiB below 20 GiB fill the first 2 GiB budget.
-        XCTAssertEqual(targets.first, 19 * GiB)
+        // The 1 GiB at the top fills the first 1 GiB budget; the empty gap comes free.
+        XCTAssertEqual(targets.first, 20 * GiB)
         XCTAssertEqual(targets.last, 16 * GiB)
-        XCTAssertEqual(targets.count, 3)
+        XCTAssertEqual(targets.count, 5)
     }
 
     func testHalfFullChunkCountsAsFullWherePartlyCrossed() throws {
@@ -75,8 +75,8 @@ final class ShrinkStepsTests: XCTestCase {
         let other = try map(32 * GiB) { _ in 0 }
         XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: other, budget: ShrinkSteps.startingBudget), 56 * GiB)
         // Fixed steps shrink with the budget after slow calls.
-        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: GiB), 60 * GiB)
-        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.minimumBudget), 63 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: 512 * MiB), 60 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.minimumBudget), 62 * GiB)
     }
 
     func testInconsistentMapsAreRefused() {
@@ -88,8 +88,8 @@ final class ShrinkStepsTests: XCTestCase {
 
     func testBudgetHalvesWhenSlowAndGrowsBackNoHigherThanTheStart() {
         var budget = ShrinkSteps.startingBudget
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 31); XCTAssertEqual(budget, GiB)
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 20); XCTAssertEqual(budget, GiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 31); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 20); XCTAssertEqual(budget, 512 * MiB)
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 94) }
         XCTAssertEqual(budget, ShrinkSteps.minimumBudget)
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB)
@@ -188,8 +188,8 @@ final class ShrinkStepsTests: XCTestCase {
         XCTAssertEqual(space.allocatedBytes(from: 12_800 * MiB, to: 16 * GiB), 1792 * MiB)
         let metadata = try APFSMetadata.capture(partitionBytes: bytes, read: read)
         XCTAssertEqual(metadata.allocatedBytes, 4 * GiB + 1792 * MiB)
-        // 16 → 4 GiB: the half-full tail fits one budget, the empty middle is free.
-        XCTAssertEqual(plannedTargets(from: 16 * GiB, to: 4 * GiB, map: space), [4 * GiB])
+        // 16 → 4 GiB: the half-full tail takes two budgets, the empty middle is free.
+        XCTAssertEqual(plannedTargets(from: 16 * GiB, to: 4 * GiB, map: space), [14 * GiB, 4 * GiB])
     }
 
     func testSpaceMapRefusedWhenCountsDisagree() {
