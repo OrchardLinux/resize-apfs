@@ -211,6 +211,8 @@ public final class DeviceEngine: @unchecked Sendable {
         guard status == 0 else {
             throw ResizeError("\(remove ? "Removing" : "Taking") the snapshot \(system.name) failed: \(String(cString: strerror(status))). Nothing else was changed.")
         }
+        // The snapshot changed what APFS can shrink to: ask again.
+        DeviceInspector.forgetMinimum()
         var after = try DeviceInspector.inspect(source)
         after.layout.systemSnapshot = SystemSnapshots.inspect(source, after)
         return try sync {
@@ -241,7 +243,7 @@ public final class DeviceEngine: @unchecked Sendable {
                 }
                 guard let (saved, step) = next else { break }
                 let source = source
-                let before = try DeviceInspector.inspect(source, queryMinimum: step == .checking || step.isResize)
+                let before = try DeviceInspector.inspect(source, queryMinimum: step == .checking || step.isResize, minimumMaxAge: 0)
                 let plan = saved.operation.plan
                 if [.expandPartition, .shrinkPartition, .shrinkAPFS, .growAPFS, .createLinux].contains(step) {
                     try sync {
@@ -300,6 +302,7 @@ public final class DeviceEngine: @unchecked Sendable {
                 }
             }
             let source = source
+            DeviceInspector.forgetMinimum()
             let final = try DeviceInspector.inspect(source)
             try sync {
                 snapshotScannedAt = nil
@@ -384,6 +387,7 @@ public final class DeviceEngine: @unchecked Sendable {
             record?.operation.message = result.message
         }
         let source = source
+        DeviceInspector.forgetMinimum()
         do {
             let observed = try DeviceInspector.inspect(source)
             sync {

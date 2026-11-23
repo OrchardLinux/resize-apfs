@@ -34,7 +34,7 @@ public enum DeviceWorker {
         var mutationEntered = false
         do {
             guard job.source.writesEnabled else { throw ResizeError("This helper has no storage-write permission.") }
-            let observed = try DeviceInspector.inspect(job.source, queryMinimum: job.step.isResize)
+            let observed = try DeviceInspector.inspect(job.source, queryMinimum: job.step.isResize, minimumMaxAge: 0)
             guard observed.gpt == job.expectedGPT,
                   observed.layout.diskID == job.plan.before.diskID,
                   observed.layout.containerID == job.plan.before.containerID,

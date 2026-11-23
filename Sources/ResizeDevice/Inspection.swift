@@ -74,7 +74,27 @@ public struct DeviceInspection: Codable, Sendable {
 public enum DeviceInspector {
     /// Blocking: the engine calls it without holding its lock, on the thread of
     /// the request, refresh loop or operation that needs it.
-    public static func inspect(_ source: DeviceSource, queryMinimum: Bool = true) throws -> DeviceInspection {
+    /// APFS's minimum-size query can be slow and is asked of the live system
+    /// volume, so it never runs twice at once and a recent answer is reused.
+    /// Only for display and review: the resize steps pass `minimumMaxAge: 0`, and
+    /// the worker asks APFS itself right before shrinking.
+    private static let minimumLock = NSLock()
+    private static var cachedMinimum: (key: String, bytes: Int64, at: Date)?
+    /// Drops the reused answer, after anything that can change it (a snapshot
+    /// removed or taken, an operation).
+    public static func forgetMinimum() {
+        minimumLock.lock(); cachedMinimum = nil; minimumLock.unlock()
+    }
+    private static func apfsMinimum(_ bsdName: String, key: String, maxAge: TimeInterval) -> Int64? {
+        minimumLock.lock(); defer { minimumLock.unlock() }
+        if let cached = cachedMinimum, cached.key == key, Date().timeIntervalSince(cached.at) <= maxAge { return cached.bytes }
+        var bytes: Int64 = 0
+        guard raf_apfs_minimum(bsdName, &bytes) == 0 else { cachedMinimum = nil; return nil }
+        cachedMinimum = (key, bytes, Date())
+        return bytes
+    }
+
+    public static func inspect(_ source: DeviceSource, queryMinimum: Bool = true, minimumMaxAge: TimeInterval = 60) throws -> DeviceInspection {
         let disk = try RawDisk(source)
         let gpt = try disk.gpt()
         let parts = try gpt.partitions(diskName: "disk0")
@@ -89,8 +109,9 @@ public enum DeviceInspector {
         }
         var minimum: Int64?
         if queryMinimum && source.writesEnabled && !source.isFixture {
-            var bytes: Int64 = 0
-            if raf_apfs_minimum(part.bsdName, &bytes) == 0,
+            // Checked against the metadata read just now, whether reused or fresh.
+            let key = "\(part.bsdName)|\(metadata.containerID)|\(metadata.capacityBytes)"
+            if let bytes = apfsMinimum(part.bsdName, key: key, maxAge: minimumMaxAge),
                bytes >= metadata.allocatedBytes, bytes > 0, bytes <= metadata.capacityBytes,
                bytes % max(4096, disk.sectorSize) == 0 { minimum = bytes }
         }
