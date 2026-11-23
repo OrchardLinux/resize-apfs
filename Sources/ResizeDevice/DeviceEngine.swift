@@ -112,7 +112,7 @@ public final class DeviceEngine: @unchecked Sendable {
     public func plan(_ request: PlanRequest) throws -> ResizePlan {
         try sync {
             try ensureIdle()
-            guard source.writesEnabled else { throw ResizeError("This overlay permits inspection only. Use a write-enabled overlay to resize storage.") }
+            guard self.source.writesEnabled else { throw ResizeError("This overlay permits inspection only. Use a write-enabled overlay to resize storage.") }
         }
         let source = source
         let fresh = try DeviceInspector.inspect(source)
@@ -185,7 +185,7 @@ public final class DeviceEngine: @unchecked Sendable {
     private func changeSnapshot(_ request: SnapshotRequest, remove: Bool) throws -> ServiceSnapshot {
         try sync {
             try ensureIdle()
-            guard source.writesEnabled, !source.isFixture else { throw ResizeError("This helper permits inspection only. The snapshot was not changed.") }
+            guard self.source.writesEnabled, !self.source.isFixture else { throw ResizeError("This helper permits inspection only. The snapshot was not changed.") }
             guard SystemSnapshots.applicable else { throw ResizeError("This iOS version has no snapshot to manage here.") }
             snapshotting = true
         }
