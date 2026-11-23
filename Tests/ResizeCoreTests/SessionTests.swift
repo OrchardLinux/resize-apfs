@@ -117,4 +117,21 @@ final class SessionTests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(device.clock, 2 * AppQuit.deadline + 1)
     }
+
+    func testTheHelperWaitsForTheFirstUnlockAndSaysSoOnce() {
+        var answers: [Bool?] = [false, false, false, true]
+        var logs: [String] = [], slept = 0
+        FirstUnlock.wait(query: { answers.removeFirst() }, sleep: { _ in slept += 1 }, log: { logs.append($0) })
+        XCTAssertTrue(answers.isEmpty)
+        XCTAssertEqual(slept, 3)
+        XCTAssertEqual(logs.count, 2)
+    }
+
+    func testAnUnlockedDeviceOrAnUnansweredQueryDoesNotWait() {
+        for answer in [true, nil] as [Bool?] {
+            var logs: [String] = []
+            FirstUnlock.wait(query: { answer }, sleep: { _ in XCTFail("waited") }, log: { logs.append($0) })
+            XCTAssertEqual(logs, [])
+        }
+    }
 }

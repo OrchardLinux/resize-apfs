@@ -6,7 +6,8 @@
     <key>com.apple.private.security.no-sandbox</key><true/>
     <key>com.apple.private.security.disk-device-access</key><true/>
     <key>com.apple.security.iokit-user-client-class</key>
-    <array><string>AppleAPFSUserClient</string></array>
+    <!-- AppleKeyStoreUserClient: MobileKeyBag's first-unlock query (FirstUnlock). -->
+    <array><string>AppleAPFSUserClient</string><string>AppleKeyStoreUserClient</string></array>
     <!-- iOS 12-14 session only: adding and removing the app on the home screen
          (--register-app / --unregister-app), as uicache does. -->
     <key>com.apple.lsapplicationworkspace.rebuildappdatabases</key><true/>

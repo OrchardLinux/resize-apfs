@@ -55,6 +55,13 @@ trusted app on an already-compromised device.
 
 Authorization, worker PID, operation state and original GPT snapshots are saved
 under `/var/root/Library/ResizeAPFS/`. GPT snapshots are not user-data backups.
+These files have no data protection (class D): the helper starts at boot and must read
+them before anyone unlocks the device; they hold partition geometry and step state, no
+user data, in a root-only folder. The helper still waits for the first unlock since boot
+(MobileKeyBag `MKBDeviceUnlockedSinceBoot`) before it starts serving, because files from
+earlier versions, its token and the app need it; it then moves older files to class D.
+A completed and verified operation is history: it is reported once, while the layout is
+still the one it produced, and never as an error after the layout changed later.
 A gated child process executes resizing independently of the UI. Reopening the
 app queries the existing operation; it does not repeat a start request. A helper
 restart with an interrupted operation records an unknown outcome, not a retry.

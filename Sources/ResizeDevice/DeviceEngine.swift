@@ -36,6 +36,7 @@ public final class DeviceEngine: @unchecked Sendable {
     public init(source: DeviceSource, directory: URL, executable: String) throws {
         self.source = source; self.directory = directory; self.executable = executable
         let state = directory.appendingPathComponent("operation.json")
+        DeviceJournal.unprotect(directory)
         if FileManager.default.fileExists(atPath: state.path) {
             record = try JSONDecoder().decode(Record.self, from: Data(contentsOf: state))
             if let saved = record, OperationHistory.restoringCompletion(saved.operation) != saved.operation {

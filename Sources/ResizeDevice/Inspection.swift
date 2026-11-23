@@ -159,15 +159,82 @@ public enum DeviceInspector {
     }
 }
 
+/// The helper's journal: operation.json, the original GPT, worker jobs and results.
+///
+/// Written without data protection (class D, `NSFileProtectionNone`). The helper
+/// is a system service that starts at boot, before anyone unlocks the device
+/// (launchd on the palera1n route, right after checkra1n on the iOS 12-14
+/// route), and must be able to read and update its journal at any time to
+/// report or continue an operation. Foundation otherwise writes class C
+/// (`CompleteUntilFirstUserAuthentication`), which iOS refuses to open until the
+/// first unlock after a boot. The journal holds partition geometry and step
+/// state, no user data, and stays in a root-only (0700) folder with 0600 files.
 public enum DeviceJournal {
+    #if os(iOS)
+    public static let writing: Data.WritingOptions = [.atomic, .noFileProtection]
+    #else
+    public static let writing: Data.WritingOptions = [.atomic]
+    #endif
+
     public static func write<T: Encodable>(_ value: T, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
-        try JSONEncoder().encode(value).write(to: url, options: .atomic)
+        try JSONEncoder().encode(value).write(to: url, options: writing)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let fd = open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         guard fd >= 0 else { throw ResizeError("Cannot confirm the operation journal was saved.") }
         defer { close(fd) }
         guard fsync(fd) == 0 else { throw ResizeError("Cannot synchronize the operation journal.") }
+    }
+
+    /// Moves files an earlier helper wrote with Foundation's default protection
+    /// (class C) to class D. Only possible once they are readable, after the
+    /// first unlock; the helper waits for it (`FirstUnlock`) before it starts.
+    public static func unprotect(_ directory: URL) {
+        #if os(iOS)
+        let manager = FileManager.default
+        var paths = [directory.path]
+        if let walker = manager.enumerator(atPath: directory.path) {
+            while let relative = walker.nextObject() as? String { paths.append(directory.appendingPathComponent(relative).path) }
+        }
+        for path in paths {
+            if (try? manager.attributesOfItem(atPath: path)[.protectionKey] as? FileProtectionType) != FileProtectionType.none {
+                try? manager.setAttributes([.protectionKey: FileProtectionType.none], ofItemAtPath: path)
+            }
+        }
+        #endif
+    }
+}
+
+/// Whether the device was unlocked since it booted. Until then iOS keeps every
+/// file of protection class C (Foundation's default) closed, so the helper waits
+/// for it before it touches its journal or publishes its socket and token. The
+/// app cannot run before then either.
+public enum FirstUnlock {
+    /// true or false; nil when MobileKeyBag cannot answer (then nothing waits).
+    public static func happened() -> Bool? {
+        #if os(iOS)
+        guard let library = dlopen("/System/Library/PrivateFrameworks/MobileKeyBag.framework/MobileKeyBag", RTLD_NOW),
+              let symbol = dlsym(library, "MKBDeviceUnlockedSinceBoot") else { return nil }
+        typealias Query = @convention(c) () -> Int32
+        let answer = unsafeBitCast(symbol, to: Query.self)()
+        return answer < 0 ? nil : answer == 1
+        #else
+        return true
+        #endif
+    }
+
+    /// Returns once the device was unlocked since boot, or at once when that
+    /// cannot be asked. No deadline: it waits for the user, however long that
+    /// takes, instead of failing and leaving nothing to restart the helper.
+    public static func wait(poll: TimeInterval = 1, query: () -> Bool? = happened,
+                            sleep: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) },
+                            log: (String) -> Void = { print($0); fflush(stdout) }) {
+        var logged = false
+        while query() == false {
+            if !logged { log("Resize APFS helper: waiting for the first unlock since boot"); logged = true }
+            sleep(poll)
+        }
+        if logged { log("Resize APFS helper: unlocked since boot") }
     }
 }

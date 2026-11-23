@@ -45,7 +45,7 @@ final class HelperServer: @unchecked Sendable {
         arc4random_buf(&bytes, bytes.count)
         token = bytes.map { String(format: "%02x", $0) }.joined()
         let credentials = ipcDirectory.appendingPathComponent("client.token")
-        try Data(token.utf8).write(to: credentials, options: .atomic)
+        try Data(token.utf8).write(to: credentials, options: DeviceJournal.writing)
         guard chmod(credentials.path, 0o640) == 0, chown(credentials.path, geteuid(), mobileGID) == 0 else { throw ResizeError("Cannot protect local IPC credentials.") }
         let path = ipcDirectory.appendingPathComponent("helper.sock").path
         unlink(path)
@@ -166,6 +166,9 @@ do {
         throw ResizeError("--session and --ui-path belong together: a session serves exactly the app it names.")
     }
     let fixture = argument("--fixture")
+    // Nothing the helper serves works before the first unlock: its journal (if an
+    // earlier helper wrote it with class C), its token and the app all need it.
+    if isDevice && fixture == nil { FirstUnlock.wait() }
     let source = DeviceSource(path: fixture ?? "/dev/disk0", fixtureSectorSize: fixture == nil ? nil : Int64(argument("--sector-size") ?? "512"),
                               writesEnabled: CommandLine.arguments.contains("--allow-writes"))
     let server = try HelperServer(source: source,
