@@ -31,6 +31,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAYLOAD = ROOT / 'out/device-ios12'
 APP = '/Applications/ResizeAPFS.app'
 SESSION = '/var/root/ResizeAPFS/session'
+# checkra1n's last line once the device is booting.
+CHECKRA1N_DONE = 'All Done'
 HELPER = SESSION + '/resize-helper'
 PIDFILE = SESSION + '/helper.pid'
 SSH_PORT = 44
@@ -173,7 +175,8 @@ def run(executable, ask=input):
     app, helper = payload()
     work = ROOT / '.work'
     work.mkdir(exist_ok=True, mode=0o700)
-    boot_run.run(checkra1n_command(executable), work / 'checkra1n.log')
+    # checkra1n's command line keeps waiting for the next DFU device after it boots this one.
+    boot_run.run(checkra1n_command(executable), work / 'checkra1n.log', done=CHECKRA1N_DONE)
     wait_for_ssh()
     # A short folder: the SSH control socket's path must stay under 104 bytes.
     with tempfile.TemporaryDirectory(prefix='resize-apfs-', dir='/tmp') as work:

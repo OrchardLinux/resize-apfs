@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -132,6 +133,21 @@ class BootRunTests(unittest.TestCase):
     def test_a_tool_that_never_finishes_is_stopped_with_its_children(self):
         with self.assertRaisesRegex(ValueError, 'No device booted'):
             self.run_tool('sleep 30 & wait', timeout=1)
+
+    def test_a_tool_that_keeps_listening_is_stopped_at_its_done_line(self):
+        # checkra1n --cli prints "All Done" and then waits for the next DFU device.
+        started = time.monotonic()
+        self.run_tool('echo " - [*]: Booting..."; echo " - [*]: All Done"; sleep 30 & wait', done='All Done')
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertIn('All Done', self.log.read_text())
+
+    def test_a_done_line_that_never_comes_still_times_out(self):
+        with self.assertRaisesRegex(ValueError, 'No device booted'):
+            self.run_tool('echo " - [*]: Waiting for DFU devices"; sleep 30 & wait', timeout=1, done='All Done')
+
+    def test_a_failure_before_the_done_line_is_still_a_failure(self):
+        with self.assertRaisesRegex(ValueError, 'did not boot'):
+            self.run_tool('echo "Exploit failed"; exit 1', done='All Done')
 
 
 class OverlayReuseTests(unittest.TestCase):
