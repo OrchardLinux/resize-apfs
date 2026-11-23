@@ -153,17 +153,41 @@ def checkra1n_command(executable, run=subprocess.run):
     return command
 
 
-def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic):
+def ssh_problem(udid=None, connect=None):
+    """None when checkra1n's SSH server on the booted device sends its greeting over USB,
+    else why not.
+
+    The greeting is checkra1n's real success: its command line does not exit after booting
+    the device but waits for the next DFU device. A device still in DFU or recovery mode, or
+    in iOS without checkra1n's server, is not listed by usbmuxd or refuses the port.
+    """
+    try:
+        sock = (connect or usbmux.connect)(SSH_PORT, udid)
+    except usbmux.UsbmuxError as error:
+        return str(error)
+    try:
+        sock.settimeout(5)
+        greeting = sock.recv(4)
+    except OSError as error:
+        return f'no SSH greeting ({error})'
+    finally:
+        sock.close()
+    return None if greeting == b'SSH-' else 'no SSH greeting'
+
+
+def ssh_answers(udid=None):
+    return ssh_problem(udid) is None
+
+
+def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, problem=ssh_problem):
     """Wait until iOS is back and checkra1n's SSH server answers over USB."""
     print('Waiting for iOS to start...', flush=True)
     deadline = now() + timeout
     last = None
     while now() < deadline:
-        try:
-            usbmux.connect(SSH_PORT, udid).close()
+        last = problem(udid)
+        if last is None:
             return
-        except usbmux.UsbmuxError as error:
-            last = error
         sleep(3)
     raise ValueError(f"checkra1n's SSH server did not come up: {last}. Unlock the device; if it stays in iOS "
                      'without the checkra1n app, run checkra1n again.')
@@ -173,8 +197,13 @@ def run(executable, ask=input):
     app, helper = payload()
     work = ROOT / '.work'
     work.mkdir(exist_ok=True, mode=0o700)
-    boot_run.run(checkra1n_command(executable), work / 'checkra1n.log')
-    wait_for_ssh()
+    # The boot ends when the device's SSH server answers (or checkra1n fails or exits).
+    # The time iOS takes to start after checkra1n is part of it.
+    if boot_run.run(checkra1n_command(executable), work / 'checkra1n.log',
+                    timeout=boot_run.TIMEOUT + 300, booted=ssh_answers) == 'exited':
+        wait_for_ssh()
+    else:
+        print('Waiting for iOS to start...', flush=True)
     # A short folder: the SSH control socket's path must stay under 104 bytes.
     with tempfile.TemporaryDirectory(prefix='resize-apfs-', dir='/tmp') as work:
         session = Session(work)

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -115,7 +116,7 @@ class BootRunTests(unittest.TestCase):
     def run_tool(self, script, **kwargs):
         with mock.patch('sys.stdout', io.StringIO()) as out:
             try:
-                boot_run.run(['sh', '-c', script], self.log, **kwargs)
+                return boot_run.run(['sh', '-c', script], self.log, **kwargs)
             finally:
                 self.out = out.getvalue()
 
@@ -132,6 +133,36 @@ class BootRunTests(unittest.TestCase):
     def test_a_tool_that_never_finishes_is_stopped_with_its_children(self):
         with self.assertRaisesRegex(ValueError, 'No device booted'):
             self.run_tool('sleep 30 & wait', timeout=1)
+
+    def test_a_tool_that_keeps_waiting_stops_once_the_booted_device_answers(self):
+        # checkra1n --cli boots the device, then waits for the next DFU device.
+        up, child = self.log.with_name('up'), self.log.with_name('child')
+        started = time.monotonic()
+        with mock.patch.object(boot_run, 'POLL', 0.05):
+            outcome = self.run_tool(f'sleep 30 & echo $! > {child}; echo " - [*]: All Done"; touch {up}; wait',
+                                    booted=up.exists)
+        self.assertEqual(outcome, 'booted')
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertIn('All Done', self.log.read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(child.read_text()), 0)
+
+    def test_the_stopped_tool_is_asked_to_exit_before_it_is_killed(self):
+        up = self.log.with_name('up')
+        with mock.patch.object(boot_run, 'POLL', 0.05):
+            self.run_tool(f'trap "echo terminated; exit 0" TERM; touch {up}; while :; do sleep 0.1; done', booted=up.exists)
+        self.assertIn('terminated', self.log.read_text())
+
+    def test_its_done_line_without_a_booted_device_is_not_a_boot(self):
+        with mock.patch.object(boot_run, 'POLL', 0.05), self.assertRaisesRegex(ValueError, 'No device booted'):
+            self.run_tool('echo " - [*]: All Done"; sleep 30 & wait', timeout=1, booted=lambda: False)
+
+    def test_a_failure_before_the_device_answers_is_still_a_failure(self):
+        with self.assertRaisesRegex(ValueError, '(?s)did not boot.*Exploit failed'):
+            self.run_tool('echo "Exploit failed"; exit 1', booted=lambda: False)
+
+    def test_a_tool_that_exits_after_booting_says_so(self):
+        self.assertEqual(self.run_tool('echo booted', booted=lambda: False), 'exited')
 
 
 class OverlayReuseTests(unittest.TestCase):
@@ -205,6 +236,23 @@ class UsbmuxTests(unittest.TestCase):
         self.serve(refuse=True)
         with self.assertRaisesRegex(usbmux.UsbmuxError, 'refused'):
             usbmux.connect(44)
+
+    def test_the_boot_counts_once_the_ssh_server_greets(self):
+        def serving(greeting):
+            def connect(port, udid):
+                self.assertEqual(port, 44)
+                ours, theirs = socket.socketpair()
+                theirs.sendall(greeting)
+                theirs.close()
+                return ours
+            return connect
+        self.assertIsNone(checkra1n_route.ssh_problem(connect=serving(b'SSH-2.0-dropbear\r\n')))
+        self.assertEqual(checkra1n_route.ssh_problem(connect=serving(b'')), 'no SSH greeting')
+
+    def test_a_device_without_the_ssh_server_has_not_booted(self):
+        self.serve(refuse=True)
+        self.assertIn('refused', checkra1n_route.ssh_problem())
+        self.assertFalse(checkra1n_route.ssh_answers())
 
     def test_a_missing_service_is_explained(self):
         with mock.patch.object(usbmux, 'SOCKET', '/nonexistent/usbmuxd'), self.assertRaisesRegex(usbmux.UsbmuxError, 'usbmuxd'):
