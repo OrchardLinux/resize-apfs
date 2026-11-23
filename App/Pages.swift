@@ -35,53 +35,65 @@ struct Pages {
     func header() -> UIView {
         if [.editor, .review].contains(model.state) {
             let back = TouchButton(type: .system)
-            back.setImage(Icon.chevronLeft.image(18, lineWidth: 2.4), for: .normal)
+            back.setImage(Icon.chevronLeft.image(16, lineWidth: 2.4), for: .normal)
             back.setTitle(model.state == .review ? " Adjust size" : " Storage", for: .normal)
-            back.titleLabel?.font = Theme.font(16)
+            back.titleLabel?.font = Theme.font(14)
             back.tintColor = Theme.blue
             back.accessibilityIdentifier = "back"
             back.addAction { [model] in model.back() }
             let cancel = TouchButton(type: .system)
             cancel.setTitle("Cancel", for: .normal)
-            cancel.titleLabel?.font = Theme.font(16)
+            cancel.titleLabel?.font = Theme.font(14)
             cancel.tintColor = Theme.blue
             cancel.addAction { [model] in model.cancelEditing() }
             return stack(.horizontal, 8, [back, spacer(), cancel], align: .center)
         }
-        let name = label("Resize APFS", Theme.font(m.appName, .bold, .title1), Theme.ink, lines: 1)
+        let name = label("Resize APFS", Theme.font(m.appName, .semibold, .title1), Theme.ink, lines: 1)
         let device = model.isSimulator ? ["Simulator · Mock storage"] : [UIDevice.current.model, osLine]
         var trailing: [UIView] = []
         if model.isSimulator {
             let lab = TouchButton(type: .system)
-            lab.setImage(Icon.flask.image(22), for: .normal)
+            lab.setImage(Icon.flask.image(20), for: .normal)
             lab.tintColor = Theme.blue
             lab.accessibilityLabel = "Mock scenarios"
             lab.accessibilityIdentifier = "mockScenarios"
             lab.addAction { [weak root] in root?.showMockLab() }
             trailing.append(lab)
         }
+        let size: CGFloat = m.regular ? 38 : (m.narrow ? 36 : 40)
+        let tile = UIView()
+        tile.backgroundColor = Theme.blue
+        let icon = Icon.drive.view(size * 0.55, color: Theme.onAccent)
+        tile.addSubview(icon)
+        tile.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: size), tile.heightAnchor.constraint(equalToConstant: size),
+                                     icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor), icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor)])
         if m.regular {
-            let tile = UIView()
-            tile.backgroundColor = Theme.blue; tile.layer.cornerRadius = 11
-            let icon = Icon.drive.view(22, color: .white)
-            tile.addSubview(icon)
-            tile.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 44), tile.heightAnchor.constraint(equalToConstant: 44),
-                                         icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor), icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor)])
             let lines = stack(.vertical, 3, device.enumerated().map { label($1, Theme.font(m.caption, $0 == 0 ? .medium : .regular), $0 == 0 ? Theme.ink : Theme.muted, lines: 1, align: .right) }, align: .trailing)
             return stack(.horizontal, 10, [tile, name, spacer(), lines] + trailing, align: .center)
         }
-        let titles = stack(.vertical, 4, [name, label(device.joined(separator: " · "), Theme.font(m.caption + 1), Theme.muted, lines: 1)])
-        return stack(.horizontal, 8, [titles, spacer()] + trailing, align: .top)
+        let titles = stack(.vertical, 4, [name, label(device.joined(separator: " · "), Theme.font(m.caption), Theme.muted, lines: 1)])
+        return stack(.horizontal, 12, [tile, titles, spacer()] + trailing, align: .center)
     }
 
-    private func title(_ text: String, _ subtitle: String?, identifier: String? = nil) -> UIView {
-        let heading = label(text, Theme.font(m.title, .semibold, .largeTitle))
+    private func title(_ text: String, _ subtitle: String?, identifier: String? = nil, centered: Bool = false) -> UIView {
+        let heading = label(text, Theme.font(m.title, .semibold, .largeTitle), Theme.ink, align: centered ? .center : .natural)
         heading.accessibilityIdentifier = identifier
         heading.accessibilityTraits = .header
         var views: [UIView] = [heading]
-        if let subtitle { views.append(label(subtitle, Theme.font(m.description), Theme.muted)) }
-        return stack(.vertical, 5, views)
+        if let subtitle { views.append(label(subtitle, Theme.font(m.description), Theme.muted, align: centered ? .center : .natural)) }
+        return stack(.vertical, 6, views)
+    }
+
+    /// A centred status heading: badge, title and lines, as on the progress, result and connecting pages.
+    private func statusHeading(_ badge: StatusBadge, _ heading: UILabel, _ lines: [String]) -> UIView {
+        heading.textAlignment = .center
+        let views: [UIView] = [badge, heading] + lines.map { label($0, Theme.font(m.description), Theme.muted, align: .center) }
+        let column = stack(.vertical, 10, views, align: .center)
+        column.setCustomSpacing(16, after: badge)
+        column.isLayoutMarginsRelativeArrangement = true
+        column.layoutMargins = UIEdgeInsets(top: m.regular ? 24 : 12, left: 0, bottom: 0, right: 0)
+        return column
     }
 
     private func heading(_ text: String) -> UILabel { label(text, Theme.font(m.heading, .semibold, .headline)) }
@@ -94,15 +106,16 @@ struct Pages {
     // MARK: Connection
 
     private func connection() -> [UIView] {
-        var body: [UIView] = [stack(.horizontal, 8, [Icon.info.view(18, color: Theme.blue), heading("Checking service status")], align: .center),
-                              label(model.isSimulator ? "Start the independent Mac service, then return here. The app reconnects automatically."
-                                                      : (model.connectionMessage ?? "Waiting for the storage helper. The app reconnects automatically."),
-                                    Theme.font(m.row), Theme.muted)]
+        let heading = label(model.isSimulator ? "Connect to the mock service" : "Connecting to storage helper",
+                            Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
+        heading.accessibilityTraits = .header
+        let message = model.isSimulator ? "Start the independent Mac service, then return here. The app reconnects automatically."
+                                        : (model.connectionMessage ?? "Waiting for the storage helper. The app reconnects automatically.")
+        var views: [UIView] = [statusHeading(StatusBadge(.working, size: m.regular ? 68 : 64), heading, [message])]
         if model.isSimulator {
-            body.append(label("./scripts/mock-server.sh", Theme.mono(m.row)))
-            body.append(caption("http://127.0.0.1:8472"))
+            views.append(section(m, "Mock service", Card(m, spacing: 8, [label("./scripts/mock-server.sh", Theme.mono(m.row)), caption("http://127.0.0.1:8472")])))
         }
-        return [title(model.isSimulator ? "Connect to the mock service" : "Connecting to storage helper", nil), Card(m, spacing: 10, body)]
+        return views
     }
 
     // MARK: Storage overview
@@ -110,33 +123,19 @@ struct Pages {
     private func overview() -> [UIView] {
         guard let layout = model.layout else { return [] }
         var views: [UIView] = []
-        if m.regular { views.append(title("Storage overview", "Inspect your disk and prepare space for what’s next.", identifier: "storageOverview")) }
-        views.append(diskCard(layout))
-        views.append(containerCard(layout))
+        if m.regular { views.append(title("Storage overview", nil, identifier: "storageOverview")) }
+        views.append(diskSection(layout))
+        views.append(containerSection(layout))
         return views
     }
 
-    private func diskCard(_ layout: StorageLayout) -> UIView {
-        let kicker = label("DISK LAYOUT", Theme.font(11, .semibold, .caption1), Theme.muted, lines: 1)
-        kicker.attributedText = NSAttributedString(string: "DISK LAYOUT", attributes: [.kern: 1, .font: Theme.font(11, .semibold, .caption1), .foregroundColor: Theme.muted])
-        let disk = stack(.horizontal, 8, [Icon.drive.view(16, color: Theme.blue),
-                                          label(m.regular ? "Internal storage" : layout.diskName, Theme.font(m.row, .medium), Theme.ink, lines: 1),
-                                          label(Capacity.gb(layout.totalBytes), Theme.digits(m.caption), Theme.muted, lines: 1)], align: .center)
-        let top = stack(.horizontal, 8, [kicker, spacer(), disk], align: .center)
+    private func diskSection(_ layout: StorageLayout) -> UIView {
         let bar = PartitionBar(m, layout: layout, labels: true, apfsTitle: "APFS partition · \(osName)")
-        return Card(m, spacing: 14, [top, bar, diskLegend(m, layout), caption("Unallocated outside partitions: \(Capacity.gb(layout.allUnallocatedBytes))")])
+        let card = Card(m, spacing: 12, [bar, diskLegend(m, layout), caption("Unallocated outside partitions: \(Capacity.gb(layout.allUnallocatedBytes))")])
+        return section(m, "Disk layout", detail: "\(m.regular ? "Internal storage" : layout.diskName) · \(Capacity.gb(layout.totalBytes))", card)
     }
 
-    private func containerCard(_ layout: StorageLayout) -> UIView {
-        let tile = UIView()
-        tile.backgroundColor = Theme.blueTint; tile.layer.cornerRadius = 10
-        let icon = Icon.layers.view(20, color: Theme.blue)
-        tile.addSubview(icon)
-        tile.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 40), tile.heightAnchor.constraint(equalToConstant: 40),
-                                     icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor), icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor)])
-        let names = stack(.vertical, 3, [heading("APFS container"), caption("\(layout.apfs.bsdName) · \(osName)")])
-        let top = stack(.horizontal, 12, [tile, names], align: .center)
+    private func containerSection(_ layout: StorageLayout) -> UIView {
         func capacity(_ title: String, _ bytes: Int64) -> UIView {
             stack(.vertical, 6, [caption(title), label(Capacity.gb(bytes), Theme.digits(m.big, .medium))])
         }
@@ -155,19 +154,21 @@ struct Pages {
         legend.append(LegendRow(m, swatch: Theme.track, title: "Free", value: Capacity.gb(layout.freeInsideBytes)))
         legend.append(LegendRow(m, swatch: nil, title: "Adjacent unallocated space", value: Capacity.gb(layout.adjacentFreeBytes), indent: true,
                                 valueIdentifier: "Adjacent unallocated spaceValue"))
-        let rule = UIView(); rule.backgroundColor = Theme.line
+        let rule = UIView(); rule.backgroundColor = Theme.separator
         rule.heightAnchor.constraint(equalToConstant: 1).isActive = true
         let details = RowButton(content: stack(.horizontal, 8, [label("Technical details", Theme.font(m.row + 1)), spacer(),
-                                                                Icon.chevronRight.view(17, color: Theme.faint)], align: .center)) { [weak root] in root?.showTechnical() }
+                                                                Icon.chevronRight.view(15, color: Theme.faint)], align: .center)) { [weak root] in root?.showTechnical() }
         details.accessibilityIdentifier = "technicalDetails"
         details.accessibilityLabel = "Technical details"
-        var figures: [UIView] = [top, capacities, usage, stack(.vertical, 10, legend)]
+        var figures: [UIView] = [capacities, usage, stack(.vertical, 10, legend)]
         if let offer = snapshotOffer(layout, editor: false) { figures.append(offer) }
         figures.append(rule)
         if let system, !system.present {
             figures.append(cardAction("Take a new \(system.name) snapshot…", color: Theme.blue, identifier: "takeSnapshot") { [model] in model.takeSnapshot() })
         }
-        return Card(m, spacing: 16, figures + [details])
+        let card = Card(m, spacing: 16, figures + [details])
+        card.content.setCustomSpacing(4, after: rule)
+        return section(m, "APFS container", detail: "\(layout.apfs.bsdName) · \(osName)", card)
     }
 
     /// The yellow offer to remove the system snapshot, in the overview and the editor.
@@ -175,15 +176,15 @@ struct Pages {
         // A snapshot known to hold nothing (just taken) is not worth an offer.
         guard let system = layout.systemSnapshot, system.present, system.removable, system.heldBytes != 0 else { return nil }
         let held = system.heldBytes.flatMap { $0 > 0 ? Capacity.gb($0) : nil }
-        let restore = "checkra1n’s Restore System stops working until a new snapshot is taken."
+        let breaks = "breaks checkra1n’s Restore System until a new snapshot is taken."
         let title: String, detail: String
         if editor {
             title = held.map { "Claim \($0) more" } ?? "Claim more space"
-            let floor = layout.minimumContainerBytes.map { "The snapshot \(system.name) keeps iOS from shrinking below \(Capacity.gb($0)). " } ?? "The snapshot \(system.name) keeps iOS from shrinking further. "
-            detail = floor + (held.map { "Removing it lets iOS shrink \($0) further. " } ?? "Removing it lets iOS shrink further. ") + restore
+            detail = (layout.minimumContainerBytes.map { "Snapshot \(system.name) keeps \(osName) above \(Capacity.gb($0)). " }
+                      ?? "Snapshot \(system.name) keeps \(osName) from shrinking further. ") + "Removing it " + breaks
         } else {
             title = held.map { "Snapshot \(system.name) holds \($0)" } ?? "Snapshot \(system.name) holds space"
-            detail = (held.map { "Removing it lets iOS shrink \($0) further. " } ?? "Removing it lets iOS shrink further. ") + restore
+            detail = "Removing it lets \(osName) shrink that much further, but " + breaks
         }
         return WarningBox(m, icon: .history, title: title, paragraphs: [detail],
                           action: (title: "Remove snapshot…", identifier: "removeSnapshot", run: { [weak root] in root?.confirmRemoveSnapshot() }, enabled: !model.busy))
@@ -192,7 +193,7 @@ struct Pages {
     /// A full-width row in a card that runs an action, like "Technical details".
     private func cardAction(_ title: String, color: UIColor, identifier: String, action: @escaping () -> Void) -> UIView {
         let row = stack(.horizontal, 8, [label(title, Theme.font(m.row + 1), model.busy ? Theme.faint : color), spacer(),
-                                         Icon.chevronRight.view(17, color: model.busy ? Theme.faint : color)], align: .center)
+                                         Icon.chevronRight.view(15, color: model.busy ? Theme.faint : color)], align: .center)
         let button = RowButton(content: row, action: action)
         button.accessibilityIdentifier = identifier
         button.accessibilityLabel = title
@@ -205,7 +206,7 @@ struct Pages {
     private func review() -> [UIView] {
         guard let plan = model.reviewedPlan else { return [] }
         var views = [title("Review changes", "Internal storage · \(plan.before.diskName)", identifier: "reviewHeading")]
-        var layoutRows: [UIView] = [heading("Your new layout"), PartitionBar(m, layout: plan.after, labels: false)]
+        var layoutRows: [UIView] = [PartitionBar(m, layout: plan.after, labels: false)]
         let before = plan.before, after = plan.after
         if before.containerBytes == before.backingBytes && plan.targetBytes == after.backingBytes {
             layoutRows.append(ChangeRow(m, swatch: Theme.blue, title: "APFS", before: Capacity.gb(before.containerBytes), after: Capacity.gb(plan.targetBytes)))
@@ -213,10 +214,11 @@ struct Pages {
             layoutRows.append(ChangeRow(m, swatch: Theme.blue, title: "APFS container", before: Capacity.gb(before.containerBytes), after: Capacity.gb(plan.targetBytes)))
             layoutRows.append(ChangeRow(m, swatch: nil, title: "Backing partition", before: Capacity.gb(before.backingBytes), after: Capacity.gb(after.backingBytes)))
         }
-        for removed in before.partitions where plan.request.replacing.contains(removed.id) {
-            layoutRows.append(ChangeRow(m, swatch: removed.isLinux ? Theme.linux : Theme.other,
-                                        title: "\(removed.label) · \(removed.bsdName)",
-                                        before: Capacity.gb(removed.blocks * before.sectorSize), after: "erased"))
+        let removed = before.partitions.filter { plan.request.replacing.contains($0.id) }.sorted { $0.firstLBA < $1.firstLBA }
+        for partition in removed {
+            layoutRows.append(ChangeRow(m, swatch: partition.isLinux ? Theme.linux : Theme.other,
+                                        title: "\(partition.label) · \(partition.bsdName)",
+                                        before: Capacity.gb(partition.blocks * before.sectorSize), after: "erased"))
         }
         let created = after.partitions.filter { candidate in !before.partitions.contains { $0.id == candidate.id } }
         for linux in created {
@@ -237,19 +239,28 @@ struct Pages {
         if plan.alignmentChanged {
             layoutRows.append(caption("Adjusted to \(NumberFormatter.localizedString(from: NSNumber(value: plan.targetBytes), number: .decimal)) bytes for \(NumberFormatter.localizedString(from: NSNumber(value: max(4096, before.sectorSize)), number: .decimal))-byte alignment."))
         }
-        views.append(Card(m, spacing: 10, layoutRows))
+        views.append(section(m, "Your new layout", Card(m, spacing: 10, layoutRows)))
+        if !removed.isEmpty {
+            let total = removed.reduce(0) { $0 + $1.blocks * before.sectorSize }
+            let rows: [UIView] = removed.map { partition in
+                let name = label("\(partition.label) · \(partition.bsdName)", Theme.font(m.row), Theme.ink)
+                let size = label(Capacity.gb(partition.blocks * before.sectorSize), Theme.digits(m.row), Theme.ink, lines: 1)
+                size.setContentCompressionResistancePriority(.required, for: .horizontal)
+                return stack(.horizontal, 12, [name, spacer(), size], align: .firstBaseline)
+            }
+            let count = removed.count == 1 ? "1 partition" : "\(removed.count) partitions"
+            views.append(WarningBox(m, tone: .danger, icon: .warning, title: "\(count) (\(Capacity.gb(total))) will be erased", paragraphs: [], rows: rows))
+        }
         let steps = plan.steps.filter { ![.checking, .preparing].contains($0) }
         let stepViews: [UIView] = steps.enumerated().map { index, step in
-            let number = label("\(index + 1)", Theme.font(m.caption, .semibold), Theme.ink, lines: 1, align: .center)
-            number.backgroundColor = Theme.background
-            number.layer.cornerRadius = 13; number.clipsToBounds = true
-            number.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([number.widthAnchor.constraint(equalToConstant: 26), number.heightAnchor.constraint(equalToConstant: 26)])
+            let number = label("\(index + 1)", Theme.digits(m.optionTitle, .medium), Theme.faint, lines: 1)
+            number.setContentHuggingPriority(.required, for: .horizontal)
+            number.widthAnchor.constraint(equalToConstant: 18).isActive = true
             let detail = step == plan.removalStep ? "Remove the approved partitions after APFS; keep its start and identity." : step.detail
             let text = stack(.vertical, 3, [label(step.title, Theme.font(m.optionTitle, .medium)), label(detail, Theme.font(m.optionDetail), Theme.muted)])
-            return stack(.horizontal, 12, [number, text], align: .top)
+            return stack(.horizontal, 10, [number, text], align: .firstBaseline)
         }
-        views.append(Card(m, spacing: 14, [heading("What will happen")] + stepViews))
+        views.append(section(m, "What will happen", ListCard(m, stepViews)))
         views.append(WarningBox(m, icon: .warning, title: "Before you apply", paragraphs: [
             "Resizing can cause data loss. Back up your data before continuing.",
             "The process may take many minutes. The device may behave normally, freeze, or become responsive again while work continues. It may appear that nothing is happening. None of these changes means resizing has finished or failed.",
@@ -261,27 +272,18 @@ struct Pages {
     // MARK: Progress
 
     private func progress() -> [UIView] {
-        let spinner = UIActivityIndicatorView(style: .whiteLarge)
-        spinner.color = Theme.blue; spinner.startAnimating()
-        let circle = UIView()
-        circle.backgroundColor = Theme.blue.withAlphaComponent(0.07); circle.layer.cornerRadius = 36
-        spinner.translatesAutoresizingMaskIntoConstraints = false
-        circle.addSubview(spinner)
-        circle.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([circle.widthAnchor.constraint(equalToConstant: 72), circle.heightAnchor.constraint(equalToConstant: 72),
-                                     spinner.centerXAnchor.constraint(equalTo: circle.centerXAnchor), spinner.centerYAnchor.constraint(equalTo: circle.centerYAnchor)])
         let op = model.operation
         let reconnecting = model.state == .reconnecting
         let heading = label(reconnecting ? "Checking operation status" : (op?.currentStep?.title ?? "Starting operation"),
-                            Theme.font(m.title, .semibold, .largeTitle), Theme.ink, align: .center)
+                            Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityIdentifier = "operationHeading"
-        let top = stack(.vertical, 12, [circle, heading,
-                                        label(model.layout?.apfs.bsdName ?? "Internal storage", Theme.font(m.row), Theme.muted, align: .center),
-                                        label(op?.currentStep?.isResize == true ? "This may take many minutes." : "Checking the requested storage changes.",
-                                              Theme.font(m.row), Theme.muted, align: .center)], align: .center)
+        let top = statusHeading(StatusBadge(.working, size: m.regular ? 68 : 64), heading, [
+            "Internal storage · \(model.layout?.apfs.bsdName ?? "disk0")",
+            op?.currentStep?.isResize == true ? "This may take many minutes." : "Checking the requested storage changes.",
+        ])
         var views: [UIView] = [top]
         if let op {
-            views.append(Card(m, spacing: 14, op.plan.steps.enumerated().map { index, step in stepRow(op, index, step, reconnecting) }))
+            views.append(ListCard(m, op.plan.steps.enumerated().map { index, step in stepRow(op, index, step, reconnecting) }))
         } else {
             views.append(label("Confirming whether the service accepted the operation. No start request will be repeated.", Theme.font(m.row), Theme.muted))
         }
@@ -295,19 +297,17 @@ struct Pages {
     private func stepRow(_ op: ResizeCore.Operation, _ index: Int, _ step: OperationStep, _ reconnecting: Bool) -> UIView {
         let current = index == op.stepIndex
         let status: UIView
-        if op.completedSteps.contains(step) { status = Icon.checkCircle.view(20, color: Theme.green) }
+        if op.completedSteps.contains(step) { status = Icon.checkCircle.view(18, color: Theme.green) }
         else if current {
-            let spinner = UIActivityIndicatorView(style: .gray)
+            let spinner = UIActivityIndicatorView(style: .white)
             spinner.color = Theme.blue; spinner.startAnimating()
-            spinner.widthAnchor.constraint(equalToConstant: 20).isActive = true
+            spinner.widthAnchor.constraint(equalToConstant: 18).isActive = true
             status = spinner
-        } else { status = Icon.circle.view(20, color: Theme.faint.withAlphaComponent(0.6)) }
-        let name = label(step.title, Theme.font(m.row + 1, current ? .semibold : .regular), current ? Theme.blue : Theme.muted, lines: 1)
+        } else { status = Icon.circle.view(18, color: Theme.faint) }
+        let name = label(step.title, Theme.font(m.row + 1, current ? .semibold : .regular), current ? Theme.blue : (op.completedSteps.contains(step) ? Theme.ink : Theme.muted), lines: 1)
         let row = stack(.horizontal, 12, [status, name, spacer()], align: .center)
         if current {
-            let chip = label(reconnecting ? "  Waiting  " : "  In progress  ", Theme.font(m.caption - 1, .semibold), Theme.blue, lines: 1)
-            chip.backgroundColor = Theme.blueTint; chip.layer.cornerRadius = 9; chip.clipsToBounds = true
-            chip.heightAnchor.constraint(equalToConstant: 20).isActive = true
+            let chip = label(reconnecting ? "Waiting" : "In progress", Theme.font(m.caption - 1, .semibold), Theme.blue, lines: 1)
             row.addArrangedSubview(chip)
         }
         guard current && step.isResize else { return row }
@@ -327,7 +327,7 @@ struct Pages {
             rows.append(caption("Capacity observation \(Int(max(0, now.timeIntervalSince(observedAt)))) seconds ago."))
         }
         let details = stack(.vertical, 8, rows)
-        details.layoutMargins = UIEdgeInsets(top: 0, left: 32, bottom: 0, right: 0)
+        details.layoutMargins = UIEdgeInsets(top: 0, left: 30, bottom: 0, right: 0)
         details.isLayoutMarginsRelativeArrangement = true
         return stack(.vertical, 12, [row, details])
     }
@@ -345,19 +345,12 @@ struct Pages {
         guard let op = model.operation, let layout = model.layout else { return [] }
         let success = op.status == .completed
         let unknown = op.status == .unknown
-        let tile = UIView()
-        tile.backgroundColor = success ? Theme.greenTint : Theme.destructiveTint; tile.layer.cornerRadius = 14
-        let icon = (success ? Icon.check : Icon.warning).view(24, color: success ? Theme.green : Theme.destructive, lineWidth: 2.4)
-        tile.addSubview(icon)
-        tile.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 48), tile.heightAnchor.constraint(equalToConstant: 48),
-                                     icon.centerXAnchor.constraint(equalTo: tile.centerXAnchor), icon.centerYAnchor.constraint(equalTo: tile.centerYAnchor)])
         let heading = label(success ? "Completed" : unknown ? "Couldn’t verify the result" : "Changes could not be completed",
-                            Theme.font(m.title, .semibold, .largeTitle))
+                            Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityIdentifier = success ? "operationCompleted" : "operationStopped"
-        let top = stack(.vertical, 12, [tile, heading, label(op.message ?? "Inspect the operation status before continuing.", Theme.font(m.description), Theme.muted)], align: .leading)
-        var rows: [UIView] = [self.heading(success ? "Verified final layout" : unknown ? "Latest observed layout" : "Verified current layout"),
-                              PartitionBar(m, layout: layout, labels: false)]
+        let top = statusHeading(StatusBadge(success ? .success : .failure, size: 52), heading,
+                                [op.message ?? "Inspect the operation status before continuing."])
+        var rows: [UIView] = [PartitionBar(m, layout: layout, labels: false)]
         if layout.containerBytes == layout.backingBytes {
             rows.append(LegendRow(m, swatch: Theme.blue, title: "APFS", value: Capacity.gb(layout.containerBytes)))
         } else {
@@ -370,23 +363,30 @@ struct Pages {
         rows.append(LegendRow(m, swatch: Theme.unallocated, title: "Unallocated", value: Capacity.gb(layout.allUnallocatedBytes)))
         let others = layout.partitions.filter { $0.kind == .other && !$0.isLinux }.reduce(0) { $0 + $1.blocks * layout.sectorSize }
         if others > 0 { rows.append(LegendRow(m, swatch: Theme.other, title: "Other partitions", value: "\(Capacity.gb(others)) · unchanged", valueColor: Theme.muted)) }
-        var views: [UIView] = [top, Card(m, spacing: 10, rows)]
-        var notes: [UIView] = op.completedSteps.compactMap { step -> UIView? in
-            let text: String
-            switch step {
-            case .verifyAPFS: text = "APFS capacity verified"
-            case .verifyPartition: text = "Both partition-table copies verified"
-            case .createLinux: text = "Linux partition created, unformatted"
-            case .verifyLayout: text = "Storage layout matches the plan"
-            default: return nil
+        let layoutTitle = success ? "Verified final layout" : unknown ? "Latest observed layout" : "Verified current layout"
+        var views: [UIView] = [top, section(m, layoutTitle, Card(m, spacing: 10, rows))]
+        // Each verified step, and, when the operation stopped, the step that failed
+        // in its place, so a failure never reads as a list of successes.
+        var notes: [UIView] = []
+        for (index, step) in op.plan.steps.enumerated() {
+            if op.completedSteps.contains(step) {
+                let text: String
+                switch step {
+                case .verifyAPFS: text = "APFS capacity verified"
+                case .verifyPartition: text = "Both partition-table copies verified"
+                case .createLinux: text = "Linux partition created, unformatted"
+                case .verifyLayout: text = "Storage layout matches the plan"
+                default: continue
+                }
+                notes.append(stack(.horizontal, 9, [Icon.checkCircle.view(16, color: Theme.green), label(text, Theme.font(m.row), Theme.ink)], align: .center))
+            } else if op.status == .stopped && index == op.stepIndex {
+                let failed = label("\(step.title) failed", Theme.font(m.row), Theme.destructive)
+                failed.accessibilityIdentifier = "failedStep"
+                notes.append(stack(.horizontal, 9, [Icon.xCircle.view(16, color: Theme.destructive), failed], align: .center))
             }
-            return stack(.horizontal, 9, [Icon.checkCircle.view(17, color: Theme.green), label(text, Theme.font(m.row), Theme.ink)], align: .center)
         }
-        if unknown { notes.append(caption("No automatic retry was sent. Checking status does not repeat the resize.")) }
-        if op.plan.request.createLinux { notes.append(caption("Format the Linux partition later in Linux.")) }
-        notes.append(caption(model.isSimulator ? "Mock result only. No physical storage was changed."
-                                               : "Metadata readback does not replace a data backup or full filesystem-integrity check."))
-        views.append(stack(.vertical, 12, notes))
+        if op.plan.request.createLinux && success { notes.append(caption("Format the Linux partition later in Linux.")) }
+        if !notes.isEmpty { views.append(stack(.vertical, 12, notes)) }
         return views
     }
 
@@ -406,13 +406,10 @@ struct Pages {
             views.append(ActionButton(title: "Adjust size", identifier: "adjustSize", arrow: .leading, disabled: model.layout?.issue != nil) { [model] in model.edit() })
             return views
         case .editor:
-            var views: [UIView] = []
-            if model.unchanged { views.append(label("Choose a different size to review changes.", Theme.font(m.caption), Theme.muted, align: .center)) }
-            views.append(ActionButton(title: "Review changes", identifier: "reviewChanges", arrow: .trailing,
-                                      disabled: model.localPlan == nil, busy: model.busy) { [model] in model.review() })
-            return views
+            return [ActionButton(title: "Review changes", identifier: "reviewChanges", arrow: .trailing,
+                                 disabled: model.localPlan == nil, busy: model.busy) { [model] in model.review() }]
         case .review:
-            return [ActionButton(title: "Apply changes", identifier: "applyChanges", style: .destructive, busy: model.busy) { [weak root] in root?.confirmApply() }]
+            return [ActionButton(title: "Apply changes", identifier: "applyChanges", busy: model.busy) { [weak root] in root?.confirmApply() }]
         case .completed:
             return [ActionButton(title: "Done", identifier: "done") { [model] in model.done() }]
         case .stopped:

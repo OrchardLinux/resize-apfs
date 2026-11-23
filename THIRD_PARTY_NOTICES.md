@@ -22,6 +22,11 @@ or helper. Complete corresponding source, the GPL license and local modification
 notes are included in `third_party/libdmg-hfsplus/`; rebuild them with
 `scripts/build-linux-tools.sh`. They dynamically use the host's libc and zlib.
 
+The iOS 12-14 app bundles JetBrains Mono 2.304 (Regular, Medium, SemiBold, Bold)
+under the SIL Open Font License 1.1. The license ships next to the fonts in
+`App/Fonts/OFL.txt` and inside the app bundle.
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+
 The following MIT notice is retained for relevant upstream material:
 
 Copyright (c) 2025 Hoolock Linux contributors

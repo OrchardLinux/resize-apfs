@@ -37,6 +37,8 @@ mkdir -p "$app"
 swiftc -I "$build" -L "$build" -lResizeCore App/*.swift \
   -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$app/ResizeAPFS"
 cp App/Info.plist "$app/Info.plist"
+# JetBrains Mono (SIL OFL 1.1, App/Fonts/OFL.txt ships alongside the fonts).
+cp -R App/Fonts "$app/Fonts"
 plutil -replace CFBundleIdentifier -string dev.omarchy.resize-apfs "$app/Info.plist"
 plutil -replace CFBundleExecutable -string ResizeAPFS "$app/Info.plist"
 plutil -replace CFBundleName -string ResizeAPFS "$app/Info.plist"

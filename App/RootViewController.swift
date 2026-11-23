@@ -29,6 +29,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
     required init?(coder: NSCoder) { fatalError() }
 
     var metrics: Metrics { Metrics(traits: traitCollection, width: view.bounds.width) }
+    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -135,9 +136,25 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         return model.state.rawValue
     }
 
+    /// Where a page sits in the flow, so moving to a later one slides forward and
+    /// going back slides back. Progress and results fade: they are not navigation.
+    private func rank(_ identity: String) -> Int {
+        switch identity {
+        case ScreenState.overview.rawValue: return 1
+        case ScreenState.editor.rawValue: return 2
+        case ScreenState.review.rawValue: return 3
+        case "operation", ScreenState.completed.rawValue, ScreenState.stopped.rawValue: return 4
+        default: return 0
+        }
+    }
+
     func render() {
         guard isViewLoaded else { return }
         let m = metrics
+        // The page as it looks now, to animate away from when the state changes.
+        let leaving = identity != pageIdentity && !pageIdentity.isEmpty && view.window != nil
+        let previous = pageIdentity
+        let snapshot = leaving ? view.snapshotView(afterScreenUpdates: false) : nil
         sideConstraints.forEach { $0.constant = -2 * m.side }
         headerTop?.constant = m.headerTop
         let header = "\(model.state == .editor || model.state == .review ? model.state.rawValue : "app")|\(m.regular)|\(m.narrow)"
@@ -164,6 +181,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             footerKey = keys.footer
         }
         if changedPage { scroll.layoutIfNeeded(); scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false) }
+        if let snapshot { transition(from: snapshot, previous: previous) }
         let ticking = identity == "operation"
         if ticking && ticker == nil {
             ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.render() }
@@ -181,6 +199,29 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         return (page, footer)
     }
 
+    /// Slides the new page in over the old one (a short parallax push), or fades
+    /// for progress, results and Reduce Motion.
+    private func transition(from snapshot: UIView, previous: String) {
+        view.layoutIfNeeded()
+        snapshot.frame = view.bounds
+        view.addSubview(snapshot)
+        let old = rank(previous), new = rank(identity)
+        let slide = !UIAccessibility.isReduceMotionEnabled && old != new && max(old, new) < 4 && min(old, new) > 0
+        let direction: CGFloat = new > old ? 1 : -1
+        let distance = view.bounds.width * 0.3
+        let moving: [UIView] = [headerSlot, scroll, footerBar]
+        moving.forEach { $0.alpha = 0; if slide { $0.transform = CGAffineTransform(translationX: direction * distance, y: 0) } }
+        view.isUserInteractionEnabled = false
+        UIView.animate(withDuration: slide ? 0.34 : 0.22, delay: 0, options: [.curveEaseOut], animations: {
+            snapshot.alpha = 0
+            if slide { snapshot.transform = CGAffineTransform(translationX: -direction * distance * 0.5, y: 0) }
+            moving.forEach { $0.alpha = 1; $0.transform = .identity }
+        }, completion: { [weak self] _ in
+            snapshot.removeFromSuperview()
+            self?.view.isUserInteractionEnabled = true
+        })
+    }
+
     func makeEditor(_ m: Metrics) -> EditorPage {
         let page = EditorPage(model: model, metrics: m, toolbar: keyboardToolbar())
         page.snapshotOffer = { [weak self] layout in self.map { Pages($0, m).snapshotOffer(layout, editor: true) } ?? nil }
@@ -191,6 +232,8 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
 
     private func keyboardToolbar() -> UIToolbar {
         let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+        bar.barStyle = .black
+        bar.tintColor = Theme.blue
         bar.items = [UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
                      UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(dismissKeyboard))]
         return bar
@@ -203,19 +246,13 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         let message = model.isSimulator
             ? "Apply the changes you reviewed? This simulator build changes mock storage only."
             : "Apply these changes to internal storage? Keep power connected and do not restart until the result is verified."
-        let alert = UIAlertController(title: "Start resizing?", message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Start resize", style: .destructive) { [weak self] _ in self?.model.apply() })
-        present(alert, animated: true)
+        present(DialogController(title: "Start resizing?", message: message, action: "Start resize") { [weak self] in self?.model.apply() }, animated: true)
     }
     func confirmRemoveSnapshot() {
         guard let name = model.layout?.systemSnapshot?.name else { return }
-        let alert = UIAlertController(title: "Remove snapshot \(name)?",
-                                      message: "checkra1n’s Restore System will no longer work until a new snapshot is taken. iOS can then shrink further.",
-                                      preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Remove", style: .destructive) { [weak self] _ in self?.model.removeSnapshot() })
-        present(alert, animated: true)
+        present(DialogController(title: "Remove snapshot \(name)?",
+                                 message: "checkra1n’s Restore System will no longer work until a new snapshot is taken. iOS can then shrink further.",
+                                 action: "Remove") { [weak self] in self?.model.removeSnapshot() }, animated: true)
     }
     func showTechnical() {
         guard let layout = model.layout else { return }
@@ -225,6 +262,13 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
     private func presentSheet(_ controller: UIViewController) {
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .formSheet
+        let bar = navigation.navigationBar
+        bar.barStyle = .black
+        bar.isTranslucent = false
+        bar.barTintColor = Theme.background
+        bar.tintColor = Theme.blue
+        bar.titleTextAttributes = [.foregroundColor: Theme.ink, .font: Theme.font(15, .semibold)]
+        navigation.view.backgroundColor = Theme.background
         present(navigation, animated: true)
     }
 }

@@ -1,7 +1,7 @@
 import UIKit
 import ResizeCore
 
-// The components of designs/resize-apfs.pen ("Components" board).
+// The components of designs/resize-apfs.pen (the Tokyo Night "Components" board).
 
 func label(_ text: String = "", _ font: UIFont, _ color: UIColor = Theme.ink, lines: Int = 0, align: NSTextAlignment = .natural) -> UILabel {
     let label = UILabel()
@@ -24,34 +24,80 @@ func spacer() -> UIView {
     return view
 }
 
-func swatch(_ color: UIColor, size: CGFloat = 9) -> UIView {
+func swatch(_ color: UIColor, size: CGFloat = 8) -> UIView {
     let view = UIView()
     view.backgroundColor = color
-    view.layer.cornerRadius = 2
     view.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([view.widthAnchor.constraint(equalToConstant: size), view.heightAnchor.constraint(equalToConstant: size)])
     return view
 }
 
-/// White rounded card with a vertical stack of content.
+/// Pins `content` inside `box` with `insets`.
+private func embed(_ content: UIView, in box: UIView, _ insets: UIEdgeInsets) {
+    content.translatesAutoresizingMaskIntoConstraints = false
+    box.addSubview(content)
+    NSLayoutConstraint.activate([
+        content.topAnchor.constraint(equalTo: box.topAnchor, constant: insets.top),
+        content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -insets.bottom),
+        content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: insets.left),
+        content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -insets.right),
+    ])
+}
+
+/// A box as Settings draws them: foreground at 4 % with a 12 % line, square.
 final class Card: UIView {
     let content: UIStackView
     init(_ metrics: Metrics, spacing: CGFloat = 12, _ views: [UIView] = []) {
         content = stack(.vertical, spacing, views)
         super.init(frame: .zero)
         backgroundColor = Theme.card
-        layer.cornerRadius = 16
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
+        layer.borderWidth = 1; layer.borderColor = Theme.cardBorder.cgColor
         let p = metrics.cardPadding
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: topAnchor, constant: p),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -p),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: p),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -p),
-        ])
+        embed(content, in: self, UIEdgeInsets(top: p, left: p, bottom: p, right: p))
     }
     required init?(coder: NSCoder) { fatalError() }
+}
+
+/// A box of rows, edge to edge, a 7 % line between them (a Settings group).
+final class ListCard: UIView {
+    init(_ metrics: Metrics, _ rows: [UIView]) {
+        super.init(frame: .zero)
+        backgroundColor = Theme.card
+        layer.borderWidth = 1; layer.borderColor = Theme.cardBorder.cgColor
+        let column = stack(.vertical, 0)
+        for (index, row) in rows.enumerated() {
+            let cell = UIView()
+            embed(row, in: cell, metrics.rowPadding)
+            column.addArrangedSubview(cell)
+            if index < rows.count - 1 {
+                let line = UIView(); line.backgroundColor = Theme.separator
+                line.heightAnchor.constraint(equalToConstant: 1).isActive = true
+                column.addArrangedSubview(line)
+            }
+        }
+        embed(column, in: self, .zero)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// A section: an uppercase caption (and an optional detail on the same line) above its box.
+func section(_ m: Metrics, _ caption: String, detail: String? = nil, _ box: UIView, identifier: String? = nil) -> UIView {
+    let title = UILabel()
+    title.attributedText = Theme.caption(caption)
+    title.numberOfLines = 1
+    title.accessibilityTraits = .header
+    title.accessibilityLabel = caption
+    title.accessibilityIdentifier = identifier
+    let row = stack(.horizontal, 8, [title], align: .firstBaseline)
+    if let detail {
+        let more = label(detail, Theme.font(10), Theme.faint, lines: 1)
+        more.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        row.addArrangedSubview(more)
+    }
+    row.addArrangedSubview(spacer())
+    row.isLayoutMarginsRelativeArrangement = true
+    row.layoutMargins = UIEdgeInsets(top: 0, left: 2, bottom: 0, right: 2)
+    return stack(.vertical, m.captionGap, [row, box])
 }
 
 /// Swatch, label, value. No swatch with `indent` lines the label up with swatched rows.
@@ -63,7 +109,7 @@ final class LegendRow: UIStackView {
         let title = label(title, Theme.font(metrics.row), titleColor)
         let lead = stack(.horizontal, 8, [], align: .center)
         if let color { lead.addArrangedSubview(swatch(color)) }
-        else if indent { let gap = UIView(); gap.widthAnchor.constraint(equalToConstant: 9).isActive = true; lead.addArrangedSubview(gap) }
+        else if indent { let gap = UIView(); gap.widthAnchor.constraint(equalToConstant: 8).isActive = true; lead.addArrangedSubview(gap) }
         lead.addArrangedSubview(title)
         super.init(frame: .zero)
         axis = .horizontal; spacing = 12; alignment = .firstBaseline
@@ -86,7 +132,7 @@ final class ChangeRow: UIStackView {
         if let color { lead.addArrangedSubview(swatch(color)) }
         lead.addArrangedSubview(label(title, Theme.font(metrics.row), Theme.muted))
         let values = stack(.horizontal, 6, [label(before, Theme.digits(metrics.row), Theme.muted, lines: 1),
-                                            Icon.arrowRight.view(13, color: Theme.faint),
+                                            Icon.arrowRight.view(12, color: Theme.faint),
                                             label(after, Theme.digits(metrics.row, .semibold), Theme.ink, lines: 1)], align: .center)
         values.setContentCompressionResistancePriority(.required, for: .horizontal)
         addArrangedSubview(lead); addArrangedSubview(spacer()); addArrangedSubview(values)
@@ -97,7 +143,6 @@ final class ChangeRow: UIStackView {
     required init(coder: NSCoder) { fatalError() }
 }
 
-/// Checkbox or radio option with title and optional detail.
 /// A button whose touch area is at least 44 × 44 pt however small it draws,
 /// as Apple's guidelines ask; text links and small icons get a usable target.
 class TouchButton: UIButton {
@@ -132,27 +177,54 @@ final class RowButton: UIControl {
     @objc private func tapped() { action() }
 }
 
+/// The installer's square checkbox and radio: a filled blue box with a dark tick,
+/// a blue outline with a filled centre, or a faint outline.
+final class SquareControl: UIView {
+    init(checkbox: Bool, selected: Bool, size: CGFloat = 18) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: size), heightAnchor.constraint(equalToConstant: size)])
+        setContentHuggingPriority(.required, for: .horizontal)
+        isUserInteractionEnabled = false
+        if !selected { layer.borderWidth = 1; layer.borderColor = Theme.faint.cgColor; return }
+        if checkbox {
+            backgroundColor = Theme.blue
+            let tick = Icon.check.view(12, color: Theme.onAccent, lineWidth: 3)
+            addSubview(tick)
+            NSLayoutConstraint.activate([tick.centerXAnchor.constraint(equalTo: centerXAnchor), tick.centerYAnchor.constraint(equalTo: centerYAnchor)])
+        } else {
+            layer.borderWidth = 1; layer.borderColor = Theme.blue.cgColor
+            let dot = UIView(); dot.backgroundColor = Theme.blue
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(dot)
+            NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 8), dot.heightAnchor.constraint(equalToConstant: 8),
+                                         dot.centerXAnchor.constraint(equalTo: centerXAnchor), dot.centerYAnchor.constraint(equalTo: centerYAnchor)])
+        }
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// Checkbox or radio option with title, an optional detail and optional content
+/// under the title (the partitions an erase option removes).
 final class OptionRow: UIControl {
     enum Kind { case checkbox, radio }
-    init(_ metrics: Metrics, kind: Kind, selected: Bool, title: String, detail: String?, trailing: String? = nil, action: @escaping () -> Void) {
+    init(_ metrics: Metrics, kind: Kind, selected: Bool, title: String, detail: String?, trailing: String? = nil,
+         below: UIView? = nil, action: @escaping () -> Void) {
         self.action = action
         super.init(frame: .zero)
-        let icon: Icon = kind == .checkbox ? (selected ? .squareCheck : .square) : (selected ? .circleDot : .circle)
-        let control = icon.view(20, color: selected ? Theme.blue : Theme.faint)
+        let control = SquareControl(checkbox: kind == .checkbox, selected: selected)
         let titleRow = stack(.horizontal, 8, [label(title, Theme.font(metrics.optionTitle, .medium))], align: .firstBaseline)
         if let trailing {
             let gain = label(trailing, Theme.digits(metrics.optionTitle - 1, .semibold), Theme.green, lines: 1)
             gain.setContentCompressionResistancePriority(.required, for: .horizontal)
             titleRow.addArrangedSubview(spacer()); titleRow.addArrangedSubview(gain)
         }
-        let text = stack(.vertical, 3, [titleRow])
+        let text = stack(.vertical, 4, [titleRow])
         if let detail { text.addArrangedSubview(label(detail, Theme.font(metrics.optionDetail), Theme.muted)) }
+        if let below { text.addArrangedSubview(below) }
         let row = stack(.horizontal, 12, [control, text], align: .top)
         row.isUserInteractionEnabled = false
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([row.topAnchor.constraint(equalTo: topAnchor, constant: 6), row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-                                     row.leadingAnchor.constraint(equalTo: leadingAnchor), row.trailingAnchor.constraint(equalTo: trailingAnchor)])
+        embed(row, in: self, .zero)
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
         isAccessibilityElement = true
         accessibilityLabel = [title, detail].compactMap { $0 }.joined(separator: ". ")
@@ -164,31 +236,29 @@ final class OptionRow: UIControl {
     override var isHighlighted: Bool { didSet { subviews.first?.alpha = isHighlighted ? 0.4 : 1 } }
 }
 
-/// The bottom action button.
+/// The bottom action button: blue with dark text, or a quiet disabled box.
 final class ActionButton: UIControl {
-    enum Style { case primary, destructive }
     enum Arrow { case none, leading, trailing }
     private let action: () -> Void
-    init(title: String, identifier: String, style: Style = .primary, arrow: Arrow = .none,
-         disabled: Bool = false, busy: Bool = false, action: @escaping () -> Void) {
+    init(title: String, identifier: String, arrow: Arrow = .none, disabled: Bool = false, busy: Bool = false, action: @escaping () -> Void) {
         self.action = action
         super.init(frame: .zero)
         let enabled = !disabled && !busy
-        layer.cornerRadius = 11
-        backgroundColor = disabled ? Theme.disabledFill : (style == .destructive ? Theme.destructive : Theme.blue)
-        let tint = disabled ? Theme.faint : UIColor.white
+        backgroundColor = disabled ? Theme.disabledFill : Theme.blue
+        let tint = disabled ? Theme.faint : Theme.onAccent
         let row = stack(.horizontal, 8, [], align: .center)
         if busy {
             let spinner = UIActivityIndicatorView(style: .white)
+            spinner.color = Theme.onAccent
             spinner.startAnimating(); row.addArrangedSubview(spinner)
-        } else if arrow == .leading { row.addArrangedSubview(Icon.arrowRight.view(17, color: tint)) }
-        row.addArrangedSubview(label(title, Theme.font(15, .semibold, .headline), tint, lines: 1))
-        if !busy && arrow == .trailing { row.addArrangedSubview(Icon.arrowRight.view(17, color: tint)) }
+        } else if arrow == .leading { row.addArrangedSubview(Icon.arrowRight.view(16, color: tint)) }
+        row.addArrangedSubview(label(title, Theme.font(14, .semibold, .headline), tint, lines: 1))
+        if !busy && arrow == .trailing { row.addArrangedSubview(Icon.arrowRight.view(16, color: tint)) }
         row.isUserInteractionEnabled = false
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
         NSLayoutConstraint.activate([row.centerXAnchor.constraint(equalTo: centerXAnchor), row.centerYAnchor.constraint(equalTo: centerYAnchor),
-                                     heightAnchor.constraint(greaterThanOrEqualToConstant: 52)])
+                                     heightAnchor.constraint(greaterThanOrEqualToConstant: 50)])
         isEnabled = enabled
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
         isAccessibilityElement = true
@@ -201,41 +271,69 @@ final class ActionButton: UIControl {
     override var isHighlighted: Bool { didSet { alpha = isHighlighted ? 0.8 : 1 } }
 }
 
-/// The yellow box: warnings and the snapshot offer share it. Amber fill and border,
-/// a heading with icon, paragraphs, and optionally one action button.
+/// A tinted box with a heading: yellow for warnings and the snapshot offer, red
+/// for what an erase removes. Optional extra rows and one plain text action.
 final class WarningBox: UIView {
-    init(_ metrics: Metrics, icon: Icon, title: String, paragraphs: [String],
+    enum Tone { case warning, danger }
+    init(_ metrics: Metrics, tone: Tone = .warning, icon: Icon, title: String, paragraphs: [String], rows: [UIView] = [],
          action: (title: String, identifier: String, run: () -> Void, enabled: Bool)? = nil) {
         super.init(frame: .zero)
-        backgroundColor = Theme.warningFill
-        layer.cornerRadius = 12
+        let ink = tone == .warning ? Theme.warningInk : Theme.destructive
+        backgroundColor = tone == .warning ? Theme.warningFill : Theme.destructiveTint
         layer.borderWidth = 1
-        layer.borderColor = Theme.warningBorder.cgColor
-        let heading = stack(.horizontal, 8, [icon.view(16, color: Theme.warningInk),
-                                             label(title, Theme.font(metrics.regular ? 16 : 15, .semibold, .headline), Theme.warningInk)], align: .center)
-        let body = stack(.vertical, 8, [heading] + paragraphs.map { label($0, Theme.font(metrics.row), Theme.warningInk) })
+        layer.borderColor = (tone == .warning ? Theme.warningBorder : Theme.destructiveBorder).cgColor
+        let heading = stack(.horizontal, 8, [icon.view(15, color: ink),
+                                             label(title, Theme.font(metrics.heading, .semibold, .headline), ink)], align: .center)
+        let body = stack(.vertical, 8, [heading] + paragraphs.map { label($0, Theme.font(metrics.row), ink) })
+        if !rows.isEmpty {
+            let list = stack(.vertical, 6, rows)
+            list.isLayoutMarginsRelativeArrangement = true
+            list.layoutMargins = UIEdgeInsets(top: 0, left: 23, bottom: 0, right: 0)
+            body.addArrangedSubview(list)
+        }
         if let action {
             let button = TouchButton(type: .system)
             button.setTitle(action.title, for: .normal)
             button.titleLabel?.font = Theme.font(metrics.row, .semibold)
             button.setTitleColor(Theme.destructive, for: .normal)
             button.setTitleColor(Theme.faint, for: .disabled)
-            button.backgroundColor = .white
-            button.layer.cornerRadius = 9
-            button.layer.borderWidth = 1
-            button.layer.borderColor = Theme.warningBorder.cgColor
-            button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
+            button.contentEdgeInsets = UIEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
             button.accessibilityIdentifier = action.identifier
             button.isEnabled = action.enabled
             button.addAction(action.run)
             body.addArrangedSubview(stack(.horizontal, 0, [button, spacer()]))
-            body.setCustomSpacing(12, after: body.arrangedSubviews[body.arrangedSubviews.count - 2])
         }
-        body.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(body)
-        let padding: CGFloat = metrics.regular ? 20 : 16
-        NSLayoutConstraint.activate([body.topAnchor.constraint(equalTo: topAnchor, constant: padding), body.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -padding),
-                                     body.leadingAnchor.constraint(equalTo: leadingAnchor, constant: padding), body.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -padding)])
+        let padding: CGFloat = metrics.regular ? 18 : 14
+        embed(body, in: self, UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding))
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// The square badge above a status page: a tinted box with a border holding a
+/// spinner (radial bars, iOS's own) or a symbol.
+final class StatusBadge: UIView {
+    enum Kind { case working, success, failure }
+    init(_ kind: Kind, size: CGFloat = 64) {
+        super.init(frame: .zero)
+        let (fill, border): (UIColor, UIColor) = kind == .working ? (Theme.blueTint, Theme.blueBorder)
+            : kind == .success ? (Theme.greenTint, Theme.greenBorder) : (Theme.destructiveTint, Theme.destructiveBorder)
+        backgroundColor = fill
+        layer.borderWidth = 1; layer.borderColor = border.cgColor
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: size), heightAnchor.constraint(equalToConstant: size)])
+        let inner: UIView
+        switch kind {
+        case .working:
+            let spinner = UIActivityIndicatorView(style: size >= 60 ? .whiteLarge : .white)
+            spinner.color = Theme.blue; spinner.startAnimating()
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            inner = spinner
+        case .success: inner = Icon.check.view(size * 0.4, color: Theme.green, lineWidth: 2.4)
+        case .failure: inner = Icon.warning.view(size * 0.4, color: Theme.destructive, lineWidth: 2.2)
+        }
+        addSubview(inner)
+        NSLayoutConstraint.activate([inner.centerXAnchor.constraint(equalTo: centerXAnchor), inner.centerYAnchor.constraint(equalTo: centerYAnchor)])
+        isAccessibilityElement = false
     }
     required init?(coder: NSCoder) { fatalError() }
 }
@@ -323,8 +421,7 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
     init(_ metrics: Metrics, layout: StorageLayout, labels: Bool, apfsTitle: String = "APFS", boundary: Boundary? = nil) {
         segments = DiskSegment.of(layout); showLabels = labels; self.apfsTitle = apfsTitle; self.metrics = metrics; self.boundary = boundary
         super.init(frame: .zero)
-        heightAnchor.constraint(equalToConstant: labels ? metrics.barHeight : 38).isActive = true
-        layer.cornerRadius = labels ? 10 : 8
+        heightAnchor.constraint(equalToConstant: labels ? metrics.barHeight : metrics.plainBarHeight).isActive = true
         clipsToBounds = true
         makeSegmentViews()
         configureBoundary()
@@ -341,7 +438,7 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
             return
         }
         if handle.superview == nil {
-            handle.backgroundColor = UIColor(hex: 0x1D4ED8)
+            handle.backgroundColor = Theme.handle
             let grip = GripView()
             grip.frame = CGRect(x: 7, y: 0, width: 8, height: 14)
             grip.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin]
@@ -386,12 +483,13 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         for (segment, view) in zip(segments, views) {
             guard let view = view as? SegmentView else { continue }
             view.backgroundColor = segment.color
-            let dark = segment.kind == .unallocated || segment.kind == .other
+            // Dark text on the coloured partitions, the theme's text on the quiet ones.
+            let quiet = segment.kind == .unallocated || segment.kind == .other
             view.title.font = Theme.font(metrics.caption, .semibold)
-            view.title.textColor = dark ? Theme.muted : .white
+            view.title.textColor = quiet ? Theme.muted : Theme.onAccent
             view.title.text = segment.kind == .apfs ? apfsTitle : segment.title
             view.size.font = Theme.digits(metrics.caption - 1)
-            view.size.textColor = dark ? Theme.muted : UIColor(white: 1, alpha: 0.85)
+            view.size.textColor = quiet ? Theme.faint : Theme.onAccent.withAlphaComponent(0.7)
             view.size.text = Capacity.gb(segment.bytes)
         }
     }
@@ -476,7 +574,7 @@ private final class GripView: UIView {
     required init?(coder: NSCoder) { fatalError() }
     override func layoutSubviews() { super.layoutSubviews(); center.y = superview.map { $0.bounds.midY } ?? center.y }
     override func draw(_ rect: CGRect) {
-        UIColor.white.setFill()
+        Theme.onAccent.setFill()
         for column in 0..<2 { for row in 0..<3 {
             UIBezierPath(ovalIn: CGRect(x: CGFloat(column) * 5, y: CGFloat(row) * 5, width: 3, height: 3)).fill()
         } }
@@ -491,8 +589,8 @@ final class UsageBar: UIView {
         self.parts = parts.map { (Double($0.0) / Double(max(1, total)), $0.1) }
         super.init(frame: .zero)
         backgroundColor = Theme.track
-        layer.cornerRadius = 4; clipsToBounds = true
-        heightAnchor.constraint(equalToConstant: 7).isActive = true
+        clipsToBounds = true
+        heightAnchor.constraint(equalToConstant: 6).isActive = true
         for part in self.parts { let view = UIView(); view.backgroundColor = part.1; addSubview(view); views.append(view) }
         isAccessibilityElement = false
     }
@@ -517,8 +615,10 @@ final class SizeField: UIView, UITextFieldDelegate {
         super.init(frame: .zero)
         let titleLabel = label(title, Theme.font(metrics.caption), Theme.muted)
         field.text = text
-        field.font = Theme.digits(17, .medium)
+        field.font = Theme.digits(16, .medium)
         field.textColor = Theme.ink
+        field.tintColor = Theme.blue
+        field.keyboardAppearance = .dark
         field.keyboardType = .decimalPad
         field.clearButtonMode = .never
         field.accessibilityLabel = title
@@ -527,21 +627,22 @@ final class SizeField: UIView, UITextFieldDelegate {
         field.delegate = self
         let clear = TouchButton(type: .custom)
         clear.setImage(Icon.xCircle.image(16), for: .normal)
-        clear.tintColor = Theme.faint.withAlphaComponent(0.6)
+        clear.tintColor = Theme.faint
         clear.accessibilityLabel = "Clear \(title)"
         clear.accessibilityIdentifier = identifier + "Clear"
         clear.addTarget(self, action: #selector(clearTapped), for: .touchUpInside)
         clear.isHidden = text.isEmpty
         self.clear = clear
-        let unit = label("GB", Theme.font(15), Theme.muted, lines: 1)
+        let unit = label("GB", Theme.font(13), Theme.muted, lines: 1)
         unit.setContentHuggingPriority(.required, for: .horizontal)
         let row = stack(.horizontal, 8, [field, clear, unit], align: .center)
         row.translatesAutoresizingMaskIntoConstraints = false
         frameView.addSubview(row)
-        frameView.layer.cornerRadius = 9
         frameView.layer.borderWidth = 1
-        frameView.layer.borderColor = (error ? Theme.destructive : Theme.blue.withAlphaComponent(0.6)).cgColor
-        frameView.backgroundColor = .white
+        frameView.backgroundColor = Theme.card
+        field.addTarget(self, action: #selector(focusChanged), for: [.editingDidBegin, .editingDidEnd])
+        self.error = error
+        updateBorder()
         NSLayoutConstraint.activate([frameView.heightAnchor.constraint(equalToConstant: 44),
                                      row.leadingAnchor.constraint(equalTo: frameView.leadingAnchor, constant: 12),
                                      row.trailingAnchor.constraint(equalTo: frameView.trailingAnchor, constant: -12),
@@ -558,8 +659,15 @@ final class SizeField: UIView, UITextFieldDelegate {
     func update(text: String, error: Bool) {
         if field.text != text { field.text = text }
         clear.isHidden = text.isEmpty
-        frameView.layer.borderColor = (error ? Theme.destructive : Theme.blue.withAlphaComponent(0.6)).cgColor
+        self.error = error
+        updateBorder()
     }
+    private var error = false
+    /// Red when the size can't be used, blue while typing, the box line otherwise.
+    private func updateBorder() {
+        frameView.layer.borderColor = (error ? Theme.destructive : field.isFirstResponder ? Theme.blue : Theme.cardBorder).cgColor
+    }
+    @objc private func focusChanged() { updateBorder() }
     /// Digits and one decimal at most, the precision every size is shown with.
     func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
         let current = textField.text ?? ""

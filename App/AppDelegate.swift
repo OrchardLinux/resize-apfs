@@ -12,7 +12,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         if ProcessInfo.processInfo.arguments.contains("--ipod-size") { frame = CGRect(x: 0, y: 0, width: 320, height: 568) }
         #endif
         let window = UIWindow(frame: frame)
-        if #available(iOS 13, *) { window.overrideUserInterfaceStyle = .light }
+        if #available(iOS 13, *) { window.overrideUserInterfaceStyle = .dark }
+        window.backgroundColor = Theme.background
         window.tintColor = Theme.blue
         window.rootViewController = RootViewController(model: model)
         window.makeKeyAndVisible()

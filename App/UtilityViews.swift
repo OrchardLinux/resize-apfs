@@ -1,8 +1,34 @@
 import UIKit
 import ResizeCore
 
+/// The sheets' grouped tables in the app's look: boxes at 4 % with 7 % lines,
+/// uppercase captions above them, notes in the faint text colour.
+class ThemedTableController: UITableViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        tableView.backgroundColor = Theme.background
+        tableView.separatorColor = Theme.separator
+        tableView.indicatorStyle = .white
+    }
+    override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        cell.backgroundColor = Theme.card
+        let selected = UIView(); selected.backgroundColor = Theme.foreground.withAlphaComponent(0.08)
+        cell.selectedBackgroundView = selected
+        cell.tintColor = Theme.blue
+    }
+    override func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        guard let header = view as? UITableViewHeaderFooterView, let text = header.textLabel?.text else { return }
+        header.textLabel?.attributedText = Theme.caption(text, size: 11)
+    }
+    override func tableView(_ tableView: UITableView, willDisplayFooterView view: UIView, forSection section: Int) {
+        guard let footer = view as? UITableViewHeaderFooterView else { return }
+        footer.textLabel?.font = Theme.font(11)
+        footer.textLabel?.textColor = Theme.faint
+    }
+}
+
 /// Read-only metadata, as the SwiftUI TechnicalView listed it.
-final class TechnicalViewController: UITableViewController {
+final class TechnicalViewController: ThemedTableController {
     private let sections: [(String, [(String, String)])]
     private let note: String
 
@@ -44,10 +70,10 @@ final class TechnicalViewController: UITableViewController {
         let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         let (name, value) = sections[indexPath.section].1[indexPath.row]
         cell.textLabel?.text = name
-        cell.textLabel?.font = Theme.font(12)
+        cell.textLabel?.font = Theme.font(11)
         cell.textLabel?.textColor = Theme.muted
         cell.detailTextLabel?.text = value
-        cell.detailTextLabel?.font = Theme.mono(14)
+        cell.detailTextLabel?.font = Theme.mono(13)
         cell.detailTextLabel?.textColor = Theme.ink
         cell.detailTextLabel?.numberOfLines = 0
         return cell
@@ -63,7 +89,7 @@ final class TechnicalViewController: UITableViewController {
 }
 
 /// Simulator only: choose the mock service's scenario and timing.
-final class MockLabViewController: UITableViewController {
+final class MockLabViewController: ThemedTableController {
     private let model: AppModel
     private var selected: MockScenario
     private var scale = 1.0
@@ -99,9 +125,11 @@ final class MockLabViewController: UITableViewController {
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        cell.textLabel?.font = Theme.font(13)
+        cell.textLabel?.textColor = Theme.ink
         switch indexPath.section {
         case 0:
-            cell.textLabel?.text = "Synthetic storage only"; cell.textLabel?.font = Theme.font(16, .semibold); cell.selectionStyle = .none
+            cell.textLabel?.text = "Synthetic storage only"; cell.textLabel?.font = Theme.font(14, .semibold); cell.selectionStyle = .none
         case 1:
             let scenario = MockScenario.allCases[indexPath.row]
             cell.textLabel?.text = scenario.title

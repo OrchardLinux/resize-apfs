@@ -30,7 +30,7 @@ final class EditorPage: UIStackView {
 
         let titleLabel = label("Adjust size", Theme.font(m.title, .semibold, .largeTitle))
         titleLabel.accessibilityTraits = .header
-        addArrangedSubview(stack(.vertical, 5, [titleLabel, label("APFS container · \(layout.apfs.bsdName)", Theme.font(m.description), Theme.muted)]))
+        addArrangedSubview(stack(.vertical, 6, [titleLabel, label("APFS container · \(layout.apfs.bsdName)", Theme.font(m.description), Theme.muted)]))
 
         let fields = stack(.horizontal, m.regular ? 24 : 12, [target, free], align: .top)
         fields.distribution = .fillEqually
@@ -82,18 +82,15 @@ final class EditorPage: UIStackView {
         if let offer = snapshotOffer?(layout) { dynamic.addArrangedSubview(offer) }
         let following = model.followingPartitions
         if model.canEraseFollowing && layout.growthSupported {
-            let option = OptionRow(m, kind: .checkbox, selected: model.eraseFollowing,
-                                   title: following.count == 1 ? "Erase the Linux partition after APFS" : "Erase the Linux partitions after APFS",
-                                   detail: nil, trailing: nil) { [model] in model.setEraseFollowing(!model.eraseFollowing) }
-            option.accessibilityIdentifier = "eraseFollowing"
-            // The partitions themselves, aligned with the option's title (20 pt box + 12 pt gap).
+            // The partitions themselves, under the option's title.
             let rows = following.map { part in
                 LegendRow(m, swatch: Theme.linux, title: "\(part.label) · \(part.bsdName)", value: Capacity.gb(part.blocks * layout.sectorSize))
             }
-            let list = stack(.vertical, 8, rows)
-            list.layoutMargins = UIEdgeInsets(top: 4, left: 32, bottom: 6, right: 0)
-            list.isLayoutMarginsRelativeArrangement = true
-            dynamic.addArrangedSubview(Card(m, spacing: 6, [option, list]))
+            let option = OptionRow(m, kind: .checkbox, selected: model.eraseFollowing,
+                                   title: following.count == 1 ? "Erase the Linux partition after APFS" : "Erase the Linux partitions after APFS",
+                                   detail: nil, below: stack(.vertical, 6, rows)) { [model] in model.setEraseFollowing(!model.eraseFollowing) }
+            option.accessibilityIdentifier = "eraseFollowing"
+            dynamic.addArrangedSubview(Card(m, spacing: 0, [option]))
         }
         dynamic.addArrangedSubview(resultingLayout(layout))
         if model.canCreateLinuxPartition {
@@ -103,7 +100,7 @@ final class EditorPage: UIStackView {
             let create = OptionRow(m, kind: .radio, selected: model.createLinux, title: "Create Linux partition",
                                    detail: "Unformatted; format later in Linux.") { [model] in model.setCreateLinux(true) }
             create.accessibilityIdentifier = "createLinux"
-            dynamic.addArrangedSubview(Card(m, spacing: 4, [label(shrinking ? "Space you free" : "Unallocated space", Theme.font(m.heading, .semibold, .headline)), leave, create]))
+            dynamic.addArrangedSubview(section(m, shrinking ? "Space you free" : "Unallocated space", ListCard(m, [leave, create])))
         }
     }
 
@@ -163,16 +160,12 @@ final class EditorPage: UIStackView {
 
     private func resultingLayout(_ layout: StorageLayout) -> UIView {
         let plan = model.localPlan
-        let heading = label("Resulting layout", Theme.font(m.heading, .semibold, .headline))
-        var top: [UIView] = [heading, spacer()]
-        if model.unchanged { top.append(label("No changes yet", Theme.font(m.caption), Theme.muted, lines: 1)) }
-        var rows: [UIView] = [stack(.horizontal, 8, top, align: .firstBaseline),
-                              LegendRow(m, swatch: nil, title: "APFS container", value: Capacity.gb(plan?.targetBytes ?? layout.containerBytes), valueIdentifier: "APFS containerValue"),
+        var rows: [UIView] = [LegendRow(m, swatch: nil, title: "APFS container", value: Capacity.gb(plan?.targetBytes ?? layout.containerBytes), valueIdentifier: "APFS containerValue"),
                               LegendRow(m, swatch: nil, title: "Backing partition", value: Capacity.gb(plan?.after.backingBytes ?? layout.backingBytes), valueIdentifier: "Backing partitionValue"),
                               LegendRow(m, swatch: nil, title: "Unallocated space", value: Capacity.gb(plan?.after.allUnallocatedBytes ?? layout.allUnallocatedBytes), valueIdentifier: "Unallocated spaceValue")]
         if model.createLinux, let linux = plan?.after.partitions.last(where: { $0.kind == .linux }) {
             rows.append(LegendRow(m, swatch: nil, title: "Linux · unformatted", value: Capacity.gb(linux.blocks * layout.sectorSize)))
         }
-        return Card(m, spacing: 12, rows)
+        return section(m, "Resulting layout", ListCard(m, rows))
     }
 }

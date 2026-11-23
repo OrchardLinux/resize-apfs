@@ -1,41 +1,70 @@
 import UIKit
 
-/// Design tokens from designs/resize-apfs.pen. iOS 12 has no dynamic system
-/// colors or SF Symbols, so colors are fixed and icons are drawn here.
+/// Design tokens from the Tokyo Night set in designs/resize-apfs.pen, which takes
+/// its colours from Omarchy's Tokyo Night theme and the shell's Settings window
+/// (background, foreground at 4 % for boxes, 12 % for their lines, 7 % between
+/// rows). iOS 12 has no dynamic colours or SF Symbols: colours are fixed and
+/// icons are drawn here. Type is JetBrains Mono, bundled in App/Fonts.
 enum Theme {
-    static let background = UIColor(hex: 0xF3F5F8)
-    static let card = UIColor.white
-    static let ink = UIColor(hex: 0x182230)
-    static let muted = UIColor(hex: 0x687485)
-    static let faint = UIColor(hex: 0x8793A3)
-    static let line = UIColor(hex: 0xE3E7ED)
-    static let blue = UIColor(hex: 0x2563EB)
-    static let blueTint = UIColor(hex: 0xEFF5FF)
-    static let track = UIColor(hex: 0xE5EDFA)
-    static let green = UIColor(hex: 0x318369)
-    static let greenTint = UIColor(hex: 0xE0F1EB)
-    static let destructive = UIColor(hex: 0xC84038)
-    static let destructiveTint = UIColor(hex: 0xFBE9E7)
-    static let linux = UIColor(hex: 0x6B57B8)
-    static let other = UIColor(hex: 0xCBD5E1)
-    static let unallocated = UIColor(hex: 0xE9EEF5)
-    static let disabledFill = UIColor(hex: 0xE2E7EE)
-    static let warningFill = UIColor(hex: 0xFFF4DF)
-    static let warningInk = UIColor(hex: 0x805012)
-    static let warningBorder = UIColor(hex: 0xF2D49B)
-    /// The part of APFS held by a removable snapshot: the allocated blue, half strength.
-    static let snapshot = UIColor(hex: 0x2563EB).withAlphaComponent(0.45)
+    static let background = UIColor(hex: 0x1A1B26)
+    static let foreground = UIColor(hex: 0xA9B1D6)
+    /// Main text: the theme's foreground, as Settings uses it.
+    static let ink = foreground
+    /// Secondary text: foreground at 60 %.
+    static let muted = foreground.withAlphaComponent(0.6)
+    /// Captions and placeholders: foreground at 40 %.
+    static let faint = foreground.withAlphaComponent(0.4)
+    static let card = foreground.withAlphaComponent(0.04)
+    static let cardBorder = foreground.withAlphaComponent(0.12)
+    static let separator = foreground.withAlphaComponent(0.07)
+    static let line = cardBorder
+    static let blue = UIColor(hex: 0x7AA2F7)
+    static let blueTint = UIColor(hex: 0x7AA2F7, alpha: 0.12)
+    static let blueBorder = UIColor(hex: 0x7AA2F7, alpha: 0.35)
+    /// Text and icons on a blue or coloured fill.
+    static let onAccent = UIColor(hex: 0x16161E)
+    static let green = UIColor(hex: 0x9ECE6A)
+    static let greenTint = UIColor(hex: 0x9ECE6A, alpha: 0.10)
+    static let greenBorder = UIColor(hex: 0x9ECE6A, alpha: 0.35)
+    static let destructive = UIColor(hex: 0xF7768E)
+    static let destructiveTint = UIColor(hex: 0xF7768E, alpha: 0.08)
+    static let destructiveBorder = UIColor(hex: 0xF7768E, alpha: 0.35)
+    static let linux = UIColor(hex: 0xBB9AF7)
+    static let other = UIColor(hex: 0x414868)
+    static let unallocated = UIColor(hex: 0x292E42)
+    static let track = UIColor(hex: 0x292E42)
+    static let disabledFill = UIColor(hex: 0x292E42)
+    static let warningFill = UIColor(hex: 0xE0AF68, alpha: 0.07)
+    static let warningInk = UIColor(hex: 0xE0AF68)
+    static let warningBorder = UIColor(hex: 0xE0AF68, alpha: 0.32)
+    /// The drag handle, as on the installer's split slider.
+    static let handle = UIColor(hex: 0xC0CAF5)
+    /// Dialogs over the dimmed page, as the installer's.
+    static let dialog = UIColor(hex: 0x1A1B26)
+    static let dialogBorder = UIColor(hex: 0x2F334D)
+    static let scrim = UIColor(hex: 0x0D0E14, alpha: 0.7)
+    /// The part of APFS held by a removable snapshot: the allocated blue at 40 %.
+    static let snapshot = UIColor(hex: 0x7AA2F7, alpha: 0.4)
 
-    /// System font at the design size, scaled with Dynamic Type.
+    /// JetBrains Mono at the design size, scaled with Dynamic Type.
     static func font(_ size: CGFloat, _ weight: UIFont.Weight = .regular, _ style: UIFont.TextStyle = .body) -> UIFont {
-        UIFontMetrics(forTextStyle: style).scaledFont(for: .systemFont(ofSize: size, weight: weight))
+        let name: String
+        switch weight {
+        case .bold, .heavy, .black: name = "JetBrainsMono-Bold"
+        case .semibold: name = "JetBrainsMono-SemiBold"
+        case .medium: name = "JetBrainsMono-Medium"
+        default: name = "JetBrainsMono-Regular"
+        }
+        let base = UIFont(name: name, size: size) ?? .monospacedDigitSystemFont(ofSize: size, weight: weight)
+        return UIFontMetrics(forTextStyle: style).scaledFont(for: base)
     }
-    static func digits(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
-        UIFontMetrics(forTextStyle: .body).scaledFont(for: .monospacedDigitSystemFont(ofSize: size, weight: weight))
-    }
-    /// Menlo: iOS 12 has no monospaced system font.
-    static func mono(_ size: CGFloat) -> UIFont {
-        UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(name: "Menlo", size: size) ?? .systemFont(ofSize: size))
+    /// Figures: the same monospaced face, so columns of sizes line up.
+    static func digits(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont { font(size, weight) }
+    static func mono(_ size: CGFloat) -> UIFont { font(size) }
+
+    /// An uppercase section caption above a box, as Settings draws them.
+    static func caption(_ text: String, size: CGFloat = 10) -> NSAttributedString {
+        NSAttributedString(string: text.uppercased(), attributes: [.kern: 1.5, .font: font(size), .foregroundColor: faint])
     }
 }
 
@@ -50,18 +79,24 @@ struct Metrics {
     var side: CGFloat { regular ? 32 : (narrow ? 12 : 16) }
     /// Space between the status bar and the header.
     var headerTop: CGFloat { regular ? 20 : 14 }
-    var cardPadding: CGFloat { regular ? 24 : 16 }
-    var sectionGap: CGFloat { regular ? 24 : 18 }
-    var title: CGFloat { regular ? 30 : (narrow ? 24 : 28) }
-    var appName: CGFloat { regular ? 22 : (narrow ? 24 : 28) }
-    var heading: CGFloat { regular ? 18 : 16 }
-    var row: CGFloat { regular ? 14 : 13 }
-    var caption: CGFloat { regular ? 13 : 12 }
-    var optionTitle: CGFloat { regular ? 15 : 14 }
-    var optionDetail: CGFloat { regular ? 13 : 12 }
-    var description: CGFloat { regular ? 15 : 14 }
-    var big: CGFloat { regular ? 27 : 24 }
-    var barHeight: CGFloat { regular ? 72 : (narrow ? 56 : 64) }
+    var cardPadding: CGFloat { regular ? 20 : 14 }
+    /// Between sections of a page.
+    var sectionGap: CGFloat { regular ? 32 : (narrow ? 22 : 26) }
+    /// Between a section's caption and its box.
+    var captionGap: CGFloat { 8 }
+    var title: CGFloat { regular ? 24 : 22 }
+    var appName: CGFloat { regular ? 18 : (narrow ? 17 : 18) }
+    var heading: CGFloat { regular ? 15 : 14 }
+    var row: CGFloat { regular ? 13 : 12 }
+    var caption: CGFloat { regular ? 12 : 11 }
+    var optionTitle: CGFloat { regular ? 14 : 13 }
+    var optionDetail: CGFloat { regular ? 12 : 11 }
+    var description: CGFloat { regular ? 13 : 12 }
+    var big: CGFloat { regular ? 22 : 19 }
+    var barHeight: CGFloat { regular ? 64 : (narrow ? 52 : 56) }
+    /// A bar without labels (review and result).
+    var plainBarHeight: CGFloat { regular ? 44 : 32 }
+    var rowPadding: UIEdgeInsets { UIEdgeInsets(top: 12, left: 14, bottom: 12, right: 14) }
     var contentWidth: CGFloat { 920 }
 }
 

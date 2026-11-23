@@ -48,9 +48,9 @@ final class ResizeAPFSUITests: XCTestCase {
         app.buttons["reviewChanges"].coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["applyChanges"].waitForExistence(timeout: 5))
         app.buttons["applyChanges"].coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 3))
-        // UIAlertController actions carry no accessibility identifier; the label is fixed.
-        app.alerts.firstMatch.buttons["Start resize"].tap()
+        // The app's own confirmation dialog: its buttons are found by their fixed titles.
+        XCTAssertTrue(app.buttons["Start resize"].waitForExistence(timeout: 3))
+        app.buttons["Start resize"].tap()
     }
 
     func testShrinkCreateLinuxAndReopenWhileRunning() throws {
@@ -125,8 +125,8 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["sizeValidation"].waitForExistence(timeout: 3), "24 GB is below the minimum while orig-fs exists")
         XCTAssertFalse(app.buttons["reviewChanges"].isEnabled)
         app.buttons["removeSnapshot"].tap()
-        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 3))
-        app.alerts.firstMatch.buttons["Remove"].tap()
+        XCTAssertTrue(app.buttons["Remove"].waitForExistence(timeout: 3))
+        app.buttons["Remove"].tap()
         // Still in the editor, same size, now allowed.
         let deadline = Date().addingTimeInterval(8)
         while app.staticTexts["sizeValidation"].exists && Date() < deadline { Thread.sleep(forTimeInterval: 0.3) }
