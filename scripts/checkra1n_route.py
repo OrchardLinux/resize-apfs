@@ -35,6 +35,11 @@ SESSION = '/var/root/ResizeAPFS/session'
 CHECKRA1N_DONE = 'All Done'
 HELPER = SESSION + '/resize-helper'
 PIDFILE = SESSION + '/helper.pid'
+# Quits the app before it is unregistered, and gives SpringBoard time to show the Home
+# Screen. Unregistered while it runs, or right after the kill, the app's screen stays black
+# and the Home button does not leave it (iPod touch 6, iOS 12.4). killall is in checkra1n's
+# binpack on every boot.
+QUIT_APP = 'if killall -9 ResizeAPFS 2>/dev/null; then sleep 2; fi; '
 SSH_PORT = 44
 # checkra1n's SSH server accepts root with iOS's default password.
 PASSWORD = 'alpine'
@@ -110,7 +115,7 @@ def is_macho(path):
 def remove_leftovers(session):
     """Undo an earlier session that ended before its cleanup. Safe when there is none."""
     session.sh(f'if [ -f {PIDFILE} ]; then kill "$(cat {PIDFILE})" 2>/dev/null; rm -f {PIDFILE}; fi; '
-               f'if [ -x {HELPER} ] && [ -d {APP} ]; then {HELPER} --unregister-app {APP}; fi; '
+               f'{QUIT_APP}if [ -x {HELPER} ] && [ -d {APP} ]; then {HELPER} --unregister-app {APP}; fi; '
                f'rm -rf {APP} {SESSION}', 'Removing an earlier session')
 
 
@@ -139,7 +144,7 @@ def finish(session, helper_process):
         helper_process.wait(timeout=20)
     except subprocess.TimeoutExpired:
         helper_process.kill()
-    session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {APP} {SESSION}', 'Removing the app')
+    session.sh(f'{QUIT_APP}{HELPER} --unregister-app {APP}; rm -rf {APP} {SESSION}', 'Removing the app')
 
 
 def checkra1n_command(executable, run=subprocess.run):

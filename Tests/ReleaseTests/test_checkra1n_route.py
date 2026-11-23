@@ -283,7 +283,9 @@ class SessionTests(unittest.TestCase):
         process = mock.Mock()
         checkra1n_route.finish(session, process)
         self.assertIn('kill', recorder.commands[0])
-        self.assertEqual(recorder.commands[-1], '/var/root/ResizeAPFS/session/resize-helper --unregister-app '
+        # The app quits first, so the device is not left on its black screen.
+        self.assertEqual(recorder.commands[-1], 'if killall -9 ResizeAPFS 2>/dev/null; then sleep 2; fi; '
+                         '/var/root/ResizeAPFS/session/resize-helper --unregister-app '
                          '/Applications/ResizeAPFS.app; rm -rf /Applications/ResizeAPFS.app /var/root/ResizeAPFS/session')
         process.wait.assert_called_once()
 
