@@ -42,6 +42,9 @@ public final class DeviceEngine: @unchecked Sendable {
                 record?.operation.status = .unknown
                 record?.operation.workerPID = nil
                 record?.operation.message = "The supervising helper restarted. A prior worker may still be running. No resize or partition write has been retried."
+                if record?.operation.currentStep == .shrinkAPFS, let step = record?.operation.apfsStep {
+                    record?.operation.message = "The supervising helper restarted during APFS shrink \(step.label.lowercased()) (\(Capacity.gb(step.fromBytes)) to \(Capacity.gb(step.targetBytes))). A prior worker may still be running. No resize or partition write has been retried."
+                }
                 inheritedOperation = true
                 try DeviceJournal.write(record!, to: state)
             }
@@ -95,6 +98,9 @@ public final class DeviceEngine: @unchecked Sendable {
                         saved.operation.message = differentBoot
                             ? "The device restarted after the previous operation. Current APFS and GPT metadata were inspected. Review a new plan; no old operation was repeated."
                             : "The previous worker returned after the helper restarted. Current metadata were inspected, but remaining stages were not run. Review any further changes."
+                        if saved.operation.currentStep == .shrinkAPFS, let step = saved.operation.apfsStep {
+                            saved.operation.message! += " The helper had started APFS shrink \(step.label.lowercased()) (\(Capacity.gb(step.fromBytes)) to \(Capacity.gb(step.targetBytes))); APFS now measures \(Capacity.gb(latest.layout.containerBytes)), and the approved target is \(Capacity.gb(saved.operation.plan.targetBytes))."
+                        }
                         record = saved; inheritedOperation = false
                         try? persist()
                     }
@@ -245,7 +251,9 @@ public final class DeviceEngine: @unchecked Sendable {
                 let source = source
                 let before = try DeviceInspector.inspect(source, queryMinimum: step == .checking || step.isResize, minimumMaxAge: 0)
                 let plan = saved.operation.plan
-                if [.expandPartition, .shrinkPartition, .shrinkAPFS, .growAPFS, .createLinux].contains(step) {
+                if step == .shrinkAPFS {
+                    guard try shrinkAPFSInSteps(saved, first: before) else { return }
+                } else if [.expandPartition, .shrinkPartition, .growAPFS, .createLinux].contains(step) {
                     try sync {
                         guard let current = record, current.operation.id == saved.operation.id else { throw ResizeError("Operation ownership changed.") }
                         accept(before)
@@ -319,6 +327,79 @@ public final class DeviceEngine: @unchecked Sendable {
                 try? persist()
             }
         }
+    }
+
+    /// Shrinks APFS in calls that each relocate a bounded amount of data
+    /// (`ShrinkSteps`), ending exactly at the plan's target. Each call is
+    /// checked by the worker against a fresh inspection and APFS's minimum, and
+    /// read back independently before the next; the journal records the step
+    /// before its worker is released, and no step is ever repeated. Returns
+    /// false when a step stopped the operation (already recorded).
+    private func shrinkAPFSInSteps(_ saved: Record, first: DeviceInspection) throws -> Bool {
+        let plan = saved.operation.plan
+        let source = source
+        var before = first
+        var budget = ShrinkSteps.startingBudget
+        var number = 0
+        var previousSeconds: Double?
+        while before.layout.containerBytes > plan.targetBytes {
+            if number > 0 {
+                sleep(ShrinkSteps.pauseSeconds)
+                let rested = try DeviceInspector.inspect(source, queryMinimum: false)
+                guard rested.gpt == before.gpt, rested.layout.containerBytes == before.layout.containerBytes,
+                      rested.layout.containerID == before.layout.containerID else {
+                    throw ResizeError("Storage changed between APFS shrink steps. No further step was started.")
+                }
+                before = rested
+            }
+            let map = DeviceInspector.spaceMap(source, matching: before)
+            let target = ShrinkSteps.nextTarget(from: before.layout.containerBytes, to: plan.targetBytes, map: map, budget: budget)
+            number += 1
+            let progress = APFSStepProgress(number: number,
+                                            plannedCount: number + ShrinkSteps.count(from: target, to: plan.targetBytes, map: map, budget: budget),
+                                            fromBytes: before.layout.containerBytes, targetBytes: target,
+                                            dataBudgetBytes: map == nil ? nil : budget, previousCallSeconds: previousSeconds)
+            try sync {
+                guard let current = record, current.operation.id == saved.operation.id else { throw ResizeError("Operation ownership changed.") }
+                accept(before)
+                record?.operation.apfsStep = progress
+                record?.operation.stepStartedAt = Date()
+                try persist()
+            }
+            let job = DeviceJob(source: source, step: .shrinkAPFS, plan: plan, expectedGPT: before.gpt,
+                                expectedContainerBytes: before.layout.containerBytes, apfsTargetBytes: target)
+            let began = ProcessInfo.processInfo.systemUptime
+            var result = try run(job)
+            let seconds = result.callSeconds ?? (ProcessInfo.processInfo.systemUptime - began)
+            let stepName = "APFS shrink \(progress.label.lowercased()) (\(Capacity.gb(progress.fromBytes)) to \(Capacity.gb(target)))"
+            if result.outcome != .success {
+                if number > 1 {
+                    result.message = "\(stepName): \(result.message) Earlier steps completed and were verified; the approved target \(Capacity.gb(plan.targetBytes)) was not reached."
+                }
+                stopAfterWorker(result)
+                return false
+            }
+            let after = try DeviceInspector.inspect(source, queryMinimum: false)
+            guard after.layout.containerBytes == target, after.gpt == before.gpt else {
+                throw ResizeError("\(stepName): the resize call returned, but independent APFS/GPT readback did not match the step.")
+            }
+            budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: seconds)
+            previousSeconds = seconds
+            try sync {
+                accept(after)
+                record?.operation.apfsStep?.previousCallSeconds = seconds
+                try persist()
+            }
+            before = after
+        }
+        try sync {
+            guard before.layout.containerBytes == plan.targetBytes else {
+                throw ResizeError("The resize call returned, but independent APFS/GPT readback did not match the plan.")
+            }
+            accept(before)
+            try completeStep(.shrinkAPFS)
+        }
+        return true
     }
 
     /// Caller holds the lock.

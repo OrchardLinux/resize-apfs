@@ -25,18 +25,21 @@ public struct Operation: Codable, Equatable, Sendable {
     public var observedAt: Date?
     public var workerPID: Int32?
     public var message: String?
+    /// While shrinking APFS in several calls: the call running or last run.
+    /// Absent in records from before shrinks ran in steps, and for growth.
+    public var apfsStep: APFSStepProgress?
     public var currentStep: OperationStep? { plan.steps.indices.contains(stepIndex) ? plan.steps[stepIndex] : nil }
     public var isActive: Bool { status == .running }
 
     public init(id: UUID, requestID: UUID, plan: ResizePlan, status: OperationStatus, stepIndex: Int,
                 completedSteps: [OperationStep], startedAt: Date, stepStartedAt: Date,
                 lastConfirmedAt: Date?, observedCapacityBytes: Int64?, observedAt: Date?,
-                workerPID: Int32?, message: String?) {
+                workerPID: Int32?, message: String?, apfsStep: APFSStepProgress? = nil) {
         self.id = id; self.requestID = requestID; self.plan = plan; self.status = status
         self.stepIndex = stepIndex; self.completedSteps = completedSteps; self.startedAt = startedAt
         self.stepStartedAt = stepStartedAt; self.lastConfirmedAt = lastConfirmedAt
         self.observedCapacityBytes = observedCapacityBytes; self.observedAt = observedAt
-        self.workerPID = workerPID; self.message = message
+        self.workerPID = workerPID; self.message = message; self.apfsStep = apfsStep
     }
 }
 

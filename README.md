@@ -83,6 +83,12 @@ require root.
 Closing the app does not stop the operation. Reopen it to check the same operation.
 Do not restart the device or run another storage tool while it is working.
 
+Large shrinks run in steps (**Step 2 of 5**). To shrink, APFS moves everything
+stored past the new end and holds storage while it does, so a single large call
+can freeze iOS long enough for iOS to restart itself. Each step moves only a limited
+amount of data and is verified before the next one starts. The step count is an
+estimate and can change while the shrink runs.
+
 Progress shows observed status, not an estimated percentage. **Status unavailable**
 means confirmation is missing—not that the resize failed. Do not retry or reboot
 solely because status is unavailable. If an operation stops with an error, inspect

@@ -414,6 +414,11 @@ struct Pages {
             LegendRow(m, swatch: nil, title: "Current", value: op.observedCapacityBytes.map(Capacity.gb) ?? "Unavailable", indent: true),
             LegendRow(m, swatch: nil, title: "Target", value: Capacity.gb(op.plan.targetBytes), indent: true),
         ]
+        if step == .shrinkAPFS, let apfsStep = op.apfsStep {
+            // A large shrink runs as several APFS calls, so iOS stays responsive between them.
+            rows.insert(LegendRow(m, swatch: nil, title: "Step", value: "\(apfsStep.number) of \(max(apfsStep.number, apfsStep.plannedCount))", valueIdentifier: "apfsStep"), at: 2)
+            rows.append(LegendRow(m, swatch: nil, title: "Step target", value: Capacity.gb(apfsStep.targetBytes), indent: true))
+        }
         if let observedAt = op.observedAt {
             rows.append(caption("Capacity observation \(Int(max(0, now.timeIntervalSince(observedAt)))) seconds ago."))
         }

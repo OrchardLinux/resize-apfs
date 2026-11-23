@@ -117,8 +117,14 @@ public actor MockEngine {
 
     public func tick(at now: Date = Date()) throws {
         guard var op = record.operation, op.isActive, let step = op.currentStep else { return }
+        // A shrink runs in steps sized from a spread-out space map, as on the device.
+        if step == .shrinkAPFS && op.apfsStep?.fromBytes != record.layout.containerBytes {
+            let number = (op.apfsStep?.number ?? 0) + 1
+            op.apfsStep = mockShrinkStep(number: number, previous: op.apfsStep == nil ? nil : 6, final: op.plan.targetBytes)
+        }
         let duration: Double
-        if step.isResize { duration = record.scenario == .longSilence ? 90 : 12 }
+        if step == .shrinkAPFS { duration = record.scenario == .longSilence ? 90 : 6 }
+        else if step.isResize { duration = record.scenario == .longSilence ? 90 : 12 }
         else { duration = step == .verifyLayout ? 2 : 0.8 }
         op.lastConfirmedAt = now
         // Capacity is an observation, not interpolated progress. It stays unchanged
@@ -144,6 +150,15 @@ public actor MockEngine {
             op.message = "Final storage verification could not establish a consistent result. Changes may have been applied. No automatic retry is available."
         } else {
             switch step {
+            case .shrinkAPFS where (op.apfsStep?.targetBytes ?? op.plan.targetBytes) > op.plan.targetBytes:
+                // An intermediate step: the next one starts on the following tick.
+                record.layout.containerBytes = op.apfsStep!.targetBytes
+                record.layout.revision = UUID()
+                op.observedCapacityBytes = record.layout.containerBytes
+                op.stepStartedAt = now
+                record.operation = op
+                try save()
+                return
             case .shrinkAPFS, .growAPFS:
                 record.layout.containerBytes = op.plan.targetBytes
                 record.layout.revision = UUID()
@@ -177,6 +192,15 @@ public actor MockEngine {
         }
         record.operation = op
         try save()
+    }
+
+    private func mockShrinkStep(number: Int, previous: Double?, final: Int64) -> APFSStepProgress {
+        let current = record.layout.containerBytes
+        let map = APFSSpaceMap.uniform(containerBytes: current, allocatedBytes: record.layout.allocatedBytes)
+        let budget = ShrinkSteps.startingBudget
+        let target = ShrinkSteps.nextTarget(from: current, to: final, map: map, budget: budget)
+        return APFSStepProgress(number: number, plannedCount: number + ShrinkSteps.count(from: target, to: final, map: map, budget: budget),
+                                fromBytes: current, targetBytes: target, dataBudgetBytes: budget, previousCallSeconds: previous)
     }
 
     private func ensureIdle() throws {

@@ -10,11 +10,17 @@ public struct DeviceJob: Codable, Sendable {
     public var plan: ResizePlan
     public var expectedGPT: GPTImage
     public var expectedContainerBytes: Int64
+    /// One step of a shrink in several calls: this call's container size,
+    /// between the plan's target and the current size. Nil: the plan's target.
+    public var apfsTargetBytes: Int64?
     public init(id: UUID = UUID(), source: DeviceSource, step: OperationStep, plan: ResizePlan,
-                expectedGPT: GPTImage, expectedContainerBytes: Int64) {
+                expectedGPT: GPTImage, expectedContainerBytes: Int64, apfsTargetBytes: Int64? = nil) {
         self.id = id; self.source = source; self.step = step; self.plan = plan
         self.expectedGPT = expectedGPT; self.expectedContainerBytes = expectedContainerBytes
+        self.apfsTargetBytes = apfsTargetBytes
     }
+    /// The container size this job's APFS resize call asks for.
+    public var resizeTargetBytes: Int64 { apfsTargetBytes ?? plan.targetBytes }
 }
 public struct WorkerResult: Codable, Sendable {
     public enum Outcome: String, Codable, Sendable { case success, returnedError, refused, unknown }
@@ -22,8 +28,11 @@ public struct WorkerResult: Codable, Sendable {
     public var outcome: Outcome
     public var message: String
     public var apiStatus: Int32?
-    public init(jobID: UUID, outcome: Outcome, message: String, apiStatus: Int32? = nil) {
+    /// How long the APFS resize call itself took, measured by the worker.
+    public var callSeconds: Double?
+    public init(jobID: UUID, outcome: Outcome, message: String, apiStatus: Int32? = nil, callSeconds: Double? = nil) {
         self.jobID = jobID; self.outcome = outcome; self.message = message; self.apiStatus = apiStatus
+        self.callSeconds = callSeconds
     }
 }
 
@@ -43,25 +52,14 @@ public enum DeviceWorker {
             }
             if job.step.isResize {
                 guard !job.source.isFixture else { throw ResizeError("APFS mutation is unavailable for host file fixtures.") }
-                if job.step == .shrinkAPFS {
-                    guard let minimum = observed.layout.minimumContainerBytes, job.plan.targetBytes >= minimum,
-                          job.plan.targetBytes >= observed.layout.allocatedBytes else {
-                        throw ResizeError("The APFS minimum-size query did not validate this shrink target.")
-                    }
-                } else {
-                    var visibleCapacity: UInt64 = 0
-                    guard raf_partition_capacity(observed.layout.apfs.bsdName, &visibleCapacity) == 0,
-                          visibleCapacity >= UInt64(job.plan.targetBytes) else {
-                        throw ResizeError("GPT may have grown, but iOS still exposes the old partition boundary. APFS growth was not attempted; the device may need a later reboot before growth can continue.")
-                    }
-                }
-                guard job.plan.targetBytes > 0, job.plan.targetBytes % 4096 == 0,
-                      job.plan.targetBytes <= observed.layout.backingBytes else { throw ResizeError("Unsafe APFS target size.") }
+                let target = try validatedResizeTarget(job, observed.layout)
                 mutationEntered = true
-                let status = raf_apfs_resize(observed.layout.apfs.bsdName, UInt64(job.plan.targetBytes))
+                let began = ProcessInfo.processInfo.systemUptime
+                let status = raf_apfs_resize(observed.layout.apfs.bsdName, UInt64(target))
+                let seconds = ProcessInfo.processInfo.systemUptime - began
                 return WorkerResult(jobID: job.id, outcome: status == 0 ? .success : .returnedError,
                                     message: status == 0 ? "The APFS resize call returned success; readback verification is still required." : "The APFS resize call returned error \(status). Changes are not assumed to be undone.",
-                                    apiStatus: status)
+                                    apiStatus: status, callSeconds: seconds)
             }
             guard [.expandPartition, .shrinkPartition, .createLinux].contains(job.step) else {
                 throw ResizeError("The worker does not accept this mutation step.")
@@ -118,6 +116,30 @@ public enum DeviceWorker {
         } catch {
             return WorkerResult(jobID: job.id, outcome: mutationEntered ? .unknown : .refused, message: error.localizedDescription)
         }
+    }
+
+    /// The size the APFS call may ask for, checked against what was observed
+    /// just now. A shrink step lies between the plan's target and the current
+    /// size and above APFS's own minimum; growth asks for the plan's target only.
+    public static func validatedResizeTarget(_ job: DeviceJob, _ layout: StorageLayout) throws -> Int64 {
+        let target = job.resizeTargetBytes
+        if job.step == .shrinkAPFS {
+            guard target < layout.containerBytes, target >= job.plan.targetBytes else {
+                throw ResizeError("This shrink step's size is not between the approved target and the current size.")
+            }
+            guard let minimum = layout.minimumContainerBytes, target >= minimum, target >= layout.allocatedBytes else {
+                throw ResizeError("The APFS minimum-size query did not validate this shrink target.")
+            }
+        } else {
+            guard job.apfsTargetBytes == nil || target == job.plan.targetBytes else { throw ResizeError("APFS growth runs to the approved size only.") }
+            var visibleCapacity: UInt64 = 0
+            guard raf_partition_capacity(layout.apfs.bsdName, &visibleCapacity) == 0,
+                  visibleCapacity >= UInt64(target) else {
+                throw ResizeError("GPT may have grown, but iOS still exposes the old partition boundary. APFS growth was not attempted; the device may need a later reboot before growth can continue.")
+            }
+        }
+        guard target > 0, target % 4096 == 0, target <= layout.backingBytes else { throw ResizeError("Unsafe APFS target size.") }
+        return target
     }
 
     public static func runFile(_ url: URL) throws {

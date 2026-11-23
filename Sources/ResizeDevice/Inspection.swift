@@ -129,6 +129,21 @@ public enum DeviceInspector {
         return DeviceInspection(layout: layout, gpt: gpt, observedAt: Date(), transactionID: metadata.transactionID)
     }
 
+    /// The APFS space map for sizing shrink steps, or nil when it cannot be read
+    /// or does not describe the container `inspection` saw. Never a reason to
+    /// refuse: the caller then uses fixed-size steps.
+    public static func spaceMap(_ source: DeviceSource, matching inspection: DeviceInspection) -> APFSSpaceMap? {
+        guard let disk = try? RawDisk(source) else { return nil }
+        let part = inspection.layout.apfs
+        let partBytes = part.blocks * disk.sectorSize
+        let map = try? APFSSpaceMap.capture(partitionBytes: partBytes) { offset, length in
+            guard offset >= 0, offset <= partBytes - Int64(length) else { throw ResizeError("APFS metadata exceeds its backing partition.") }
+            return try disk.read(part.firstLBA * disk.sectorSize + offset, length)
+        }
+        guard let map, map.containerBytes == inspection.layout.containerBytes else { return nil }
+        return map
+    }
+
     private static func sha256(_ data: Data) -> Data {
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         data.withUnsafeBytes { buffer in _ = CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &digest) }

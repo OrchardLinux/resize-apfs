@@ -11,6 +11,11 @@ public struct APFSMetadata: Codable, Equatable, Sendable {
     /// Reads checksummed container-level metadata only; does not mount, unlock,
     /// repair or traverse user files. Unknown layouts are refused.
     public static func capture(partitionBytes: Int64, read: GPTImage.Reader) throws -> APFSMetadata {
+        try checkpoint(partitionBytes: partitionBytes, read: read).metadata
+    }
+
+    /// The newest complete checkpoint's metadata and its space-manager block.
+    static func checkpoint(partitionBytes: Int64, read: GPTImage.Reader) throws -> (metadata: APFSMetadata, spaceman: Data) {
         let prefix = try read(0, 4096)
         guard prefix.count == 4096, prefix[32..<36] == Data("NXSB".utf8) else {
             throw ResizeError("The APFS container superblock is not recognizable.")
@@ -59,8 +64,8 @@ public struct APFSMetadata: Codable, Equatable, Sendable {
             guard DiskChecksums.validAPFSObject(sm), sm.le64(8) == spaceman, sm.le64(16) == xid,
                   sm.le32(24) & 0xffff == 5, sm.le32(32) == block,
                   sm.le64(48) == count, sm.le64(72) <= count else { continue }
-            return APFSMetadata(containerID: id, transactionID: xid, blockSize: block, blockCount: Int64(count),
-                                allocatedBytes: Int64(count - sm.le64(72)) * block)
+            return (APFSMetadata(containerID: id, transactionID: xid, blockSize: block, blockCount: Int64(count),
+                                 allocatedBytes: Int64(count - sm.le64(72)) * block), sm)
         }
         throw ResizeError("Could not establish a complete, checksummed APFS checkpoint. No changes are permitted.")
     }
