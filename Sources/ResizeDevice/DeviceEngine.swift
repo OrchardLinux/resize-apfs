@@ -279,6 +279,13 @@ public final class DeviceEngine: @unchecked Sendable {
                         accept(after)
                         try completeStep(step)
                     }
+                    // The grown GPT is on disk and verified: ask the kernel to read it again,
+                    // so the grow can find the larger partition without a restart. The grow
+                    // step checks the visible size itself, exactly as without this.
+                    if step == .expandPartition, !source.isFixture {
+                        PartitionReprobe.attempt(partition: after.layout.apfs.bsdName, target: UInt64(plan.targetBytes),
+                                                 journal: directory)
+                    }
                 } else {
                     try sync {
                         guard let current = record, current.operation.id == saved.operation.id else { throw ResizeError("Operation ownership changed.") }

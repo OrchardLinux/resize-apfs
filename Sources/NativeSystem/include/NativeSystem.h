@@ -9,6 +9,10 @@ int raf_flush(int fd, int regular_file_fixture);
 int raf_apfs_minimum(const char *bsd, int64_t *bytes);
 int raf_apfs_resize(const char *bsd, uint64_t bytes);
 int raf_partition_capacity(const char *bsd, uint64_t *bytes);
+/* Ask the kernel to read the GPT of whole disk `whole` (e.g. "disk0") again: IOServiceRequestProbe
+   on its IOPartitionScheme child, else on its IOMedia. The probes' IOReturn codes go to the
+   status arguments (-1: not tried). 0 when a probe was accepted; ENOTSUP on macOS/simulator. */
+int raf_reprobe_partitions(const char *whole, int32_t *scheme_status, int32_t *media_status);
 int raf_spawn_worker(const char *executable, const char *job, pid_t *pid, int *release_fd);
 int raf_release_worker(int fd);
 int raf_wait_for_release(int fd);

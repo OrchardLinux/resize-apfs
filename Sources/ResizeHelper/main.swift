@@ -157,6 +157,11 @@ do {
         try AppRegistration.unregister(app)
         exit(0)
     }
+    // Testing only, not part of a route: ask the kernel to read disk0's GPT again and
+    // report the partition's size before and after. Changes nothing on disk.
+    if let partition = argument("--reprobe") {
+        exit(PartitionReprobe.attempt(partition: partition, target: nil, journal: stateDirectory) == nil ? 2 : 0)
+    }
     if CommandLine.arguments.contains("--operation-active") {
         exit(DeviceEngine.operationActive(directory: stateDirectory) ? 0 : 1)
     }

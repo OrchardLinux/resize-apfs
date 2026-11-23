@@ -87,9 +87,14 @@ GPT writer updates backup then primary metadata, flushes and reads back, and
 preserves the MBR and unrelated entries. Completion requires the requested APFS
 size and GPT layout to match readback.
 
-Growth also checks kernel-visible partition capacity. If iOS retains the old
-boundary, the operation can stop after expanding GPT and explain that another
-boot may be needed. It never forces an unmount or reboot.
+Growth also checks kernel-visible partition capacity. After the expanded GPT is
+written and verified, the helper asks the kernel to read the partition table again
+(`IOServiceRequestProbe` on disk0's partition scheme, else its media) and waits up to
+10 seconds for the APFS partition device to report the new size. Each attempt (probe
+results, size before and after) goes to the helper log and to `reprobe.log` in the
+journal folder. If iOS still retains the old boundary, the operation can stop after
+expanding GPT and explain that another boot may be needed. It never forces an unmount
+or reboot.
 
 Linux partition creation changes GPT only. It does not format, wipe, mount or
 install Linux. Previously used space can still contain old bytes.
@@ -123,6 +128,9 @@ over checkra1n's SSH server, for one session only. On the device it uses only
 - `--session --allow-writes --ui-path PATH`: serve the app in the foreground as on the
   palera1n route, trusting the app executable at PATH instead of the overlay's.
 - `--operation-active`: exit 0 while a resize it started is still running, else 1.
+- `--reprobe diskNsM` (testing only, not used by the route): ask the kernel to read the disk's
+  GPT again and print the partition's size before and after; also appended to `reprobe.log`.
+  Writes nothing to the disk.
 
 `scripts/build-device-ios12.sh` builds both for iOS 12.0 and later (not yet part of a release).
 iOS 12.0 and 12.1 have no Swift runtime, so the app bundles Apple's back-deployment runtime in

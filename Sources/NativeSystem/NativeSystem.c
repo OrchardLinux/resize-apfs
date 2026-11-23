@@ -102,6 +102,53 @@ int raf_partition_capacity(const char *bsd, uint64_t *bytes) {
     return result;
 #endif
 }
+#if !(TARGET_OS_OSX || TARGET_OS_SIMULATOR)
+#include <IOKit/IOKitLib.h>
+#endif
+int raf_reprobe_partitions(const char *whole, int32_t *scheme_status, int32_t *media_status) {
+    *scheme_status = -1; *media_status = -1;
+#if TARGET_OS_OSX || TARGET_OS_SIMULATOR
+    (void)whole; return ENOTSUP; // Never rescan a host disk.
+#else
+    if (strncmp(whole, "disk", 4) || !whole[4] || strlen(whole) > 8) return EINVAL;
+    for (const char *p = whole + 4; *p; ++p) if (!isdigit((unsigned char)*p)) return EINVAL;
+    // IOKit through dlsym, as APFS.framework above: nothing to link, iOS only.
+    void *iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY | RTLD_LOCAL);
+    if (!iokit) return ENOSYS;
+    CFMutableDictionaryRef (*bsd_matching)(mach_port_t, uint32_t, const char *) = dlsym(iokit, "IOBSDNameMatching");
+    io_service_t (*matching_service)(mach_port_t, CFDictionaryRef) = dlsym(iokit, "IOServiceGetMatchingService");
+    kern_return_t (*child_iterator)(io_registry_entry_t, const io_name_t, io_iterator_t *) = dlsym(iokit, "IORegistryEntryGetChildIterator");
+    io_object_t (*next)(io_iterator_t) = dlsym(iokit, "IOIteratorNext");
+    boolean_t (*conforms)(io_object_t, const io_name_t) = dlsym(iokit, "IOObjectConformsTo");
+    kern_return_t (*probe)(io_service_t, uint32_t) = dlsym(iokit, "IOServiceRequestProbe");
+    kern_return_t (*release)(io_object_t) = dlsym(iokit, "IOObjectRelease");
+    if (!bsd_matching || !matching_service || !child_iterator || !next || !conforms || !probe || !release) {
+        dlclose(iokit); return ENOSYS;
+    }
+    int result = ENODEV;
+    CFMutableDictionaryRef matching = bsd_matching(MACH_PORT_NULL, 0, whole);
+    io_service_t media = matching ? matching_service(MACH_PORT_NULL, matching) : 0; // consumes `matching`
+    if (media) {
+        // The partition scheme (IOGUIDPartitionScheme) is the whole-disk media's child and
+        // implements requestProbe: it scans the GPT again and updates its partitions' media,
+        // as on macOS after diskutil changes a disk in use. IOMedia itself has no probe.
+        io_iterator_t children = 0;
+        if (child_iterator(media, "IOService", &children) == KERN_SUCCESS) {
+            io_object_t child;
+            while ((child = next(children))) {
+                if (*scheme_status == -1 && conforms(child, "IOPartitionScheme")) *scheme_status = probe(child, 0);
+                release(child);
+            }
+            release(children);
+        }
+        if (*scheme_status != KERN_SUCCESS) *media_status = probe(media, 0);
+        result = (*scheme_status == KERN_SUCCESS || *media_status == KERN_SUCCESS) ? 0 : EIO;
+        release(media);
+    }
+    dlclose(iokit);
+    return result;
+#endif
+}
 int raf_spawn_worker(const char *executable, const char *job, pid_t *pid, int *release_fd) {
     int gate[2];
     if (pipe(gate)) return errno;
