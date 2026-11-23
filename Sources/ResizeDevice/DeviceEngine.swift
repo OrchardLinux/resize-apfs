@@ -38,6 +38,10 @@ public final class DeviceEngine: @unchecked Sendable {
         let state = directory.appendingPathComponent("operation.json")
         if FileManager.default.fileExists(atPath: state.path) {
             record = try JSONDecoder().decode(Record.self, from: Data(contentsOf: state))
+            if let saved = record, OperationHistory.restoringCompletion(saved.operation) != saved.operation {
+                record?.operation = OperationHistory.restoringCompletion(saved.operation)
+                try DeviceJournal.write(record!, to: state)
+            }
             if record?.operation.status == .running {
                 record?.operation.status = .unknown
                 record?.operation.workerPID = nil
@@ -77,14 +81,6 @@ public final class DeviceEngine: @unchecked Sendable {
             case .success(let latest):
                 if flags.snapshots { systemSnapshot = latest.layout.systemSnapshot; snapshotScannedAt = Date() }
                 accept(latest)
-                if record?.operation.status == .completed, let plan = record?.operation.plan,
-                   (latest.layout.diskID != plan.after.diskID || latest.layout.containerID != plan.after.containerID ||
-                    latest.layout.containerBytes != plan.targetBytes || latest.layout.backingBytes != plan.targetBytes ||
-                    !Self.samePartitions(latest.layout.partitions, plan.after.partitions)) {
-                    record?.operation.status = .stopped
-                    record?.operation.message = "The previous operation completed, but the storage layout has changed since then. Current metadata were inspected; no previous operation was repeated."
-                    try? persist()
-                }
                 if inheritedOperation, var saved = record {
                     let result = saved.workerJob.flatMap { try? Data(contentsOf: DeviceWorker.resultURL(for: $0)) }
                         .flatMap { try? JSONDecoder().decode(WorkerResult.self, from: $0) }
@@ -300,7 +296,7 @@ public final class DeviceEngine: @unchecked Sendable {
                         } else if step == .verifyLayout {
                             let originalGPT = try tryOriginalGPT(saved.operation.id)
                             guard before.layout.containerBytes == plan.targetBytes, before.layout.backingBytes == plan.targetBytes,
-                                  Self.samePartitions(before.layout.partitions, plan.after.partitions),
+                                  Partition.same(before.layout.partitions, plan.after.partitions),
                                   before.gpt.mbr == originalGPT.mbr else {
                                 throw ResizeError("The final layout does not match the approved plan.")
                             }
@@ -316,7 +312,7 @@ public final class DeviceEngine: @unchecked Sendable {
                 snapshotScannedAt = nil
                 accept(final)
                 record?.operation.status = .completed
-                record?.operation.message = "All requested storage changes were completed and verified from APFS and both GPT copies. This is not a full filesystem-integrity check."
+                record?.operation.message = OperationHistory.completedMessage
                 try persist()
             }
         } catch {
@@ -487,8 +483,9 @@ public final class DeviceEngine: @unchecked Sendable {
     // The helpers below are called with the lock held.
     private func currentSnapshot() throws -> ServiceSnapshot {
         guard let inspection else { throw ResizeError(inspectionError) }
+        // A completed operation the layout has moved on from is history, not news.
         return ServiceSnapshot(mode: source.isFixture ? "fixture" : "device", layout: inspection.layout,
-                               operation: record?.operation)
+                               operation: OperationHistory.reported(record?.operation, on: inspection.layout))
     }
     private func accept(_ latest: DeviceInspection) {
         guard inspection == nil || latest.observedAt >= inspection!.observedAt else { return }
@@ -507,11 +504,6 @@ public final class DeviceEngine: @unchecked Sendable {
     }
     private func tryOriginalGPT(_ id: UUID) throws -> GPTImage {
         try JSONDecoder().decode(GPTImage.self, from: Data(contentsOf: directory.appendingPathComponent("backups/\(id.uuidString).gpt.json")))
-    }
-    private static func samePartitions(_ lhs: [Partition], _ rhs: [Partition]) -> Bool {
-        lhs.count == rhs.count && lhs.allSatisfy { p in rhs.contains { q in
-            p.id == q.id && p.name == q.name && p.firstLBA == q.firstLBA && p.lastLBA == q.lastLBA && p.typeGUID == q.typeGUID
-        } }
     }
     private static func bootIdentity() -> String {
         var time = timeval(), length = MemoryLayout<timeval>.size
