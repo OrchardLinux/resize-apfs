@@ -194,7 +194,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         let encoded = model.snapshotKey
         let editing = [model.targetText, model.freeText, model.targetBytes.map(String.init) ?? "-", "\(model.createLinux)", "\(model.eraseFollowing)", model.reviewedPlan?.id.uuidString ?? "-"]
         let page = ([model.state.rawValue, model.error ?? "-", "\(model.busy)", "\(model.connectionOK)", model.connectionMessage ?? "-", encoded] + editing).joined(separator: "|")
-        let footer = [model.state.rawValue, "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
+        let footer = [model.state.rawValue, model.error ?? "-", "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
                       model.operation?.status.rawValue ?? "-"].joined(separator: "|")
         return (page, footer)
     }

@@ -4,6 +4,102 @@ import ResizeCore
 var osName: String { UIDevice.current.systemName }
 var osLine: String { "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)" }
 
+/// The device's name as Apple sells it ("iPad (6th generation)"); iOS itself
+/// only says "iPad". The hardware identifier comes from hw.machine; anything not
+/// listed (newer than this table) falls back to the generic model and identifier.
+var deviceName: String {
+    var size = 0
+    sysctlbyname("hw.machine", nil, &size, nil, 0)
+    var buffer = [CChar](repeating: 0, count: max(1, size))
+    sysctlbyname("hw.machine", &buffer, &size, nil, 0)
+    let identifier = String(cString: buffer)
+    return deviceNames[identifier] ?? (identifier.isEmpty ? UIDevice.current.model : "\(UIDevice.current.model) (\(identifier))")
+}
+private let deviceNames: [String: String] = [
+    "iPad4,1": "iPad Air",
+    "iPad4,2": "iPad Air",
+    "iPad4,3": "iPad Air",
+    "iPad5,3": "iPad Air 2",
+    "iPad5,4": "iPad Air 2",
+    "iPad11,3": "iPad Air (3rd generation)",
+    "iPad11,4": "iPad Air (3rd generation)",
+    "iPad13,1": "iPad Air (4th generation)",
+    "iPad13,2": "iPad Air (4th generation)",
+    "iPad13,16": "iPad Air (5th generation)",
+    "iPad13,17": "iPad Air (5th generation)",
+    "iPad6,11": "iPad (5th generation)",
+    "iPad6,12": "iPad (5th generation)",
+    "iPad7,5": "iPad (6th generation)",
+    "iPad7,6": "iPad (6th generation)",
+    "iPad7,11": "iPad (7th generation)",
+    "iPad7,12": "iPad (7th generation)",
+    "iPad11,6": "iPad (8th generation)",
+    "iPad11,7": "iPad (8th generation)",
+    "iPad12,1": "iPad (9th generation)",
+    "iPad12,2": "iPad (9th generation)",
+    "iPad13,18": "iPad (10th generation)",
+    "iPad13,19": "iPad (10th generation)",
+    "iPad4,4": "iPad mini 2",
+    "iPad4,5": "iPad mini 2",
+    "iPad4,6": "iPad mini 2",
+    "iPad4,7": "iPad mini 3",
+    "iPad4,8": "iPad mini 3",
+    "iPad4,9": "iPad mini 3",
+    "iPad5,1": "iPad mini 4",
+    "iPad5,2": "iPad mini 4",
+    "iPad11,1": "iPad mini (5th generation)",
+    "iPad11,2": "iPad mini (5th generation)",
+    "iPad14,1": "iPad mini (6th generation)",
+    "iPad14,2": "iPad mini (6th generation)",
+    "iPad6,3": "iPad Pro (9.7-inch)",
+    "iPad6,4": "iPad Pro (9.7-inch)",
+    "iPad6,7": "iPad Pro (12.9-inch)",
+    "iPad6,8": "iPad Pro (12.9-inch)",
+    "iPad7,1": "iPad Pro (12.9-inch) (2nd generation)",
+    "iPad7,2": "iPad Pro (12.9-inch) (2nd generation)",
+    "iPad7,3": "iPad Pro (10.5-inch)",
+    "iPad7,4": "iPad Pro (10.5-inch)",
+    "iPad8,1": "iPad Pro (11-inch)",
+    "iPad8,2": "iPad Pro (11-inch)",
+    "iPad8,3": "iPad Pro (11-inch)",
+    "iPad8,4": "iPad Pro (11-inch)",
+    "iPad8,5": "iPad Pro (12.9-inch) (3rd generation)",
+    "iPad8,6": "iPad Pro (12.9-inch) (3rd generation)",
+    "iPad8,7": "iPad Pro (12.9-inch) (3rd generation)",
+    "iPad8,8": "iPad Pro (12.9-inch) (3rd generation)",
+    "iPad8,9": "iPad Pro (11-inch) (2nd generation)",
+    "iPad8,10": "iPad Pro (11-inch) (2nd generation)",
+    "iPad8,11": "iPad Pro (12.9-inch) (4th generation)",
+    "iPad8,12": "iPad Pro (12.9-inch) (4th generation)",
+    "iPhone6,1": "iPhone 5s",
+    "iPhone6,2": "iPhone 5s",
+    "iPhone7,2": "iPhone 6",
+    "iPhone7,1": "iPhone 6 Plus",
+    "iPhone8,1": "iPhone 6s",
+    "iPhone8,2": "iPhone 6s Plus",
+    "iPhone8,4": "iPhone SE",
+    "iPhone9,1": "iPhone 7",
+    "iPhone9,3": "iPhone 7",
+    "iPhone9,2": "iPhone 7 Plus",
+    "iPhone9,4": "iPhone 7 Plus",
+    "iPhone10,1": "iPhone 8",
+    "iPhone10,4": "iPhone 8",
+    "iPhone10,2": "iPhone 8 Plus",
+    "iPhone10,5": "iPhone 8 Plus",
+    "iPhone10,3": "iPhone X",
+    "iPhone10,6": "iPhone X",
+    "iPhone11,2": "iPhone XS",
+    "iPhone11,4": "iPhone XS Max",
+    "iPhone11,6": "iPhone XS Max",
+    "iPhone11,8": "iPhone XR",
+    "iPhone12,1": "iPhone 11",
+    "iPhone12,3": "iPhone 11 Pro",
+    "iPhone12,5": "iPhone 11 Pro Max",
+    "iPhone12,8": "iPhone SE (2nd generation)",
+    "iPod7,1": "iPod touch (6th generation)",
+    "iPod9,1": "iPod touch (7th generation)",
+]
+
 /// Builds the page and footer for the model's current state.
 struct Pages {
     let root: RootViewController
@@ -13,11 +109,6 @@ struct Pages {
 
     func build() -> [UIView] {
         var views: [UIView] = []
-        if let error = model.error {
-            let text = label(error, Theme.font(m.row), Theme.destructive)
-            text.accessibilityIdentifier = "serviceError"
-            views.append(stack(.horizontal, 8, [Icon.alertCircle.view(16, color: Theme.destructive), text], align: .top))
-        }
         switch model.state {
         case .loading: views += connection()
         case .overview: views += overview()
@@ -49,7 +140,7 @@ struct Pages {
             return stack(.horizontal, 8, [back, spacer(), cancel], align: .center)
         }
         let name = label("Resize APFS", Theme.font(m.appName, .semibold, .title1), Theme.ink, lines: 1)
-        let device = model.isSimulator ? ["Simulator · Mock storage"] : [UIDevice.current.model, osLine]
+        let device = model.isSimulator ? ["Simulator · Mock storage"] : [deviceName, osLine]
         var trailing: [UIView] = []
         if model.isSimulator {
             let lab = TouchButton(type: .system)
@@ -72,7 +163,7 @@ struct Pages {
             let lines = stack(.vertical, 3, device.enumerated().map { label($1, Theme.font(m.caption, $0 == 0 ? .medium : .regular), $0 == 0 ? Theme.ink : Theme.muted, lines: 1, align: .right) }, align: .trailing)
             return stack(.horizontal, 10, [tile, name, spacer(), lines] + trailing, align: .center)
         }
-        let titles = stack(.vertical, 4, [name, label(device.joined(separator: " · "), Theme.font(m.caption), Theme.muted, lines: 1)])
+        let titles = stack(.vertical, 4, [name, label(device.joined(separator: " · "), Theme.font(m.caption), Theme.muted, lines: 2)])
         return stack(.horizontal, 12, [tile, titles, spacer()] + trailing, align: .center)
     }
 
@@ -316,7 +407,7 @@ struct Pages {
         let fresh = WorkerConfirmation.isFresh(pid: op.workerPID, confirmedAt: op.lastConfirmedAt, connectionAvailable: model.connectionOK, now: now)
         var rows: [UIView] = [
             LegendRow(m, swatch: nil, title: "Resize process", value: fresh ? "Active · PID \(op.workerPID.map(String.init) ?? "—")" : "Status unavailable", valueIdentifier: "workerStatus"),
-            LegendRow(m, swatch: nil, title: "Last confirmed", value: age.map { "\(Int($0)) seconds ago" } ?? "Not confirmed", valueIdentifier: "workerLastConfirmed"),
+            LegendRow(m, swatch: nil, title: "Last confirmed", value: age.map { $0 < 10 ? "now" : "\(Int($0)) seconds ago" } ?? "Not confirmed", valueIdentifier: "workerLastConfirmed"),
             LegendRow(m, swatch: nil, title: "Elapsed", value: elapsed(now.timeIntervalSince(op.startedAt)), valueIdentifier: "workerElapsed"),
             caption("APFS capacity"),
             LegendRow(m, swatch: nil, title: "Before", value: Capacity.gb(op.plan.before.containerBytes), indent: true),
@@ -392,7 +483,20 @@ struct Pages {
 
     // MARK: Footer
 
+    /// A failed request, shown right above the action that caused it, where the
+    /// user is looking, not at the top of a page that may be scrolled away.
+    private func errorRow() -> UIView? {
+        guard let error = model.error else { return nil }
+        let text = label(error, Theme.font(m.row), Theme.destructive)
+        text.accessibilityIdentifier = "serviceError"
+        return stack(.horizontal, 8, [Icon.alertCircle.view(15, color: Theme.destructive), text], align: .top)
+    }
+
     func footer() -> [UIView] {
+        return (errorRow().map { [$0] } ?? []) + actions()
+    }
+
+    private func actions() -> [UIView] {
         switch model.state {
         case .overview:
             var views: [UIView] = []

@@ -235,8 +235,8 @@ final class AppModel {
     /// end commits through `setTarget`/`useAvailable`, which renders once.
     func previewTarget(_ gb: Double) {
         guard let maximum = maximumBytes else { return }
-        if gb >= Double(maximum) / 1e9 - 0.05 { targetExact = maximum; targetText = Self.display(maximum) }
-        else { targetExact = nil; targetText = String(format: "%.1f", gb) }
+        if gb >= Double(maximum) / 1e9 - 0.001 { targetExact = maximum; targetText = Self.display(maximum) }
+        else { targetExact = nil; targetText = String(format: "%.0f", gb) }
         reviewedPlan = nil
         updateFree()
     }
@@ -247,8 +247,12 @@ final class AppModel {
     func setEraseFollowing(_ value: Bool) {
         guard canEraseFollowing || !value else { return }
         eraseFollowing = value
-        // The limit changed; keep the size and recompute the free space.
         reviewedPlan = nil
+        // The limit changed. A size past the new limit follows it, as the bar's
+        // boundary does, instead of staying behind as an error; any other size stays.
+        if let bytes = targetBytes, let maximum = maximumBytes, bytes > maximum {
+            targetExact = maximum; targetText = Self.display(maximum); error = nil
+        }
         updateFree()
         createLinux = createLinux && canCreateLinuxPartition
         notify()

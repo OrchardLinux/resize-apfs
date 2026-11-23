@@ -546,13 +546,20 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         let fraction = Double(min(max(0, point.x / max(1, bounds.width)), 1))
         let total = Double(segments.reduce(0) { $0 + $1.bytes }) / 1e9
         let start = Double(segments.prefix { $0.kind != .apfs }.reduce(0) { $0 + $1.bytes }) / 1e9
-        let value = min(max(fraction * total - start, boundary.range.lowerBound), boundary.range.upperBound)
-        let rounded = (value * 10).rounded() / 10
+        let rounded = PartitionBar.snap(fraction * total - start, to: boundary.range)
         let finished = pan is UITapGestureRecognizer || pan.state == .ended || pan.state == .cancelled
-        // Moving within the same 0.1 GB changes nothing until the finger lifts.
+        // Moving within the same whole GB changes nothing until the finger lifts.
         guard finished || rounded != lastSent else { return }
         lastSent = finished ? nil : rounded
         boundary.changed(rounded, finished)
+    }
+    /// The boundary moves in whole GB. The top half GB of the range snaps to the
+    /// exact maximum, so APFS reaches what follows it instead of stopping a
+    /// sliver short; the lowest whole GB at or above the minimum is the floor.
+    static func snap(_ value: Double, to range: ClosedRange<Double>) -> Double {
+        if value >= range.upperBound - 0.5 { return range.upperBound }
+        let floor = ceil(range.lowerBound - 1e-9)
+        return min(max(value.rounded(), floor), range.upperBound)
     }
     /// Only a sideways drag moves the boundary; vertical swipes scroll the page.
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
@@ -560,11 +567,11 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         let velocity = pan.velocity(in: self)
         return abs(velocity.x) > abs(velocity.y)
     }
-    override func accessibilityIncrement() { step(0.1) }
-    override func accessibilityDecrement() { step(-0.1) }
+    override func accessibilityIncrement() { step(1) }
+    override func accessibilityDecrement() { step(-1) }
     private func step(_ delta: Double) {
         guard let boundary else { return }
-        boundary.changed(min(max(boundary.value + delta, boundary.range.lowerBound), boundary.range.upperBound), true)
+        boundary.changed(PartitionBar.snap(boundary.value.rounded() + delta, to: boundary.range), true)
     }
 }
 

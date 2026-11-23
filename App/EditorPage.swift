@@ -121,8 +121,8 @@ final class EditorPage: UIStackView {
         return PartitionBar.Boundary(range: range, value: min(max(value, range.lowerBound), range.upperBound),
             changed: { [weak self, model] value, finished in
                 guard finished else { self?.preview(value); return }
-                if value >= range.upperBound - 0.05 { model.useAvailable() }
-                else { model.setTarget(String(format: "%.1f", value)) }
+                if value >= range.upperBound - 0.001 { model.useAvailable() }
+                else { model.setTarget(String(format: "%.0f", value)) }
             })
     }
 

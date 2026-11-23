@@ -153,10 +153,9 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertTrue(confirmed.waitForExistence(timeout: 8))
         for _ in 0..<4 {
             Thread.sleep(forTimeInterval: 2)
+            // Under 10 seconds the age reads "now".
             let label = confirmed.label
-            let age = Int(label.split(separator: " ").first ?? "")
-            XCTAssertNotNil(age, label)
-            XCTAssertLessThanOrEqual(age ?? Int.max, 4, "UI heartbeat is stale despite live mock worker: \(label)")
+            XCTAssertEqual(label, "now", "UI heartbeat is stale despite live mock worker: \(label)")
         }
     }
 
