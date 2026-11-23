@@ -6,12 +6,21 @@ import ResizeCore
 /// runs on the main queue and ends by notifying `onChange`.
 final class AppModel {
     private(set) var machine: WorkflowMachine
-    private(set) var snapshot: ServiceSnapshot?
+    private(set) var snapshot: ServiceSnapshot? {
+        didSet {
+            var stable = snapshot
+            stable?.capturedAt = Date(timeIntervalSince1970: 0)
+            snapshotKey = stable.flatMap { try? JSONEncoder().encode($0) }.map { $0.base64EncodedString() } ?? "-"
+        }
+    }
+    /// The snapshot without its capture time, encoded once per poll instead of on
+    /// every render (a drag renders many times a second).
+    private(set) var snapshotKey = "-"
     private(set) var reviewedPlan: ResizePlan?
     private(set) var connectionOK = false
     private(set) var receivedAt: Date?
     private(set) var connectionMessage: String?
-    var error: String? { didSet { notify() } }
+    var error: String? { didSet { if error != oldValue { notify() } } }
     private(set) var busy = false
     private(set) var targetText = ""
     private(set) var freeText = ""
@@ -69,6 +78,15 @@ final class AppModel {
         if eraseFollowing { let end = layout.apfs.lastLBA; layout.partitions.removeAll { $0.firstLBA > end } }
         return layout
     }
+    /// How large APFS may get. A gap after APFS smaller than the display rounding
+    /// (an alignment remainder of a few MB) is not offered: growing into it would
+    /// show "24 GB" becoming "24 GB".
+    var maximumBytes: Int64? {
+        guard let layout = editingLayout else { return nil }
+        let tolerance: Int64 = 50_000_000
+        return layout.maximumBytes - layout.containerBytes < tolerance && layout.maximumBytes >= layout.containerBytes
+            ? layout.containerBytes : layout.maximumBytes
+    }
     /// The requested size: the exact derived value, or what was typed. A typed
     /// value within the display rounding (0.05 GB) of the maximum, on either
     /// side, means the maximum: typing back the "31.6" shown for 31.64 GB or for
@@ -77,9 +95,9 @@ final class AppModel {
     var targetBytes: Int64? {
         if let targetExact { return targetExact }
         guard let typed = Capacity.parseGB(targetText) else { return nil }
-        guard let layout = editingLayout else { return typed }
+        guard let layout = editingLayout, let maximum = maximumBytes else { return typed }
         let tolerance: Int64 = 50_000_000
-        if abs(typed - layout.maximumBytes) < tolerance { return layout.maximumBytes }
+        if abs(typed - maximum) < tolerance { return maximum }
         if let minimum = layout.minimumContainerBytes, typed < minimum, minimum - typed < tolerance { return minimum }
         return typed
     }
@@ -188,7 +206,7 @@ final class AppModel {
         return formatter.string(from: NSNumber(value: Double(bytes) / 1_000_000_000)) ?? Capacity.input(bytes)
     }
     private func updateFree() {
-        if let bytes = targetBytes, let layout = editingLayout { freeText = Self.display(max(0, layout.maximumBytes - bytes)) }
+        if let bytes = targetBytes, let maximum = maximumBytes { freeText = Self.display(max(0, maximum - bytes)) }
     }
     private func setDerivedTarget(_ bytes: Int64, notifying: Bool = true) {
         targetExact = bytes; targetText = Self.display(bytes); reviewedPlan = nil; error = nil
@@ -206,13 +224,22 @@ final class AppModel {
     }
     func setFree(_ text: String) {
         freeText = text; reviewedPlan = nil; error = nil
-        if let bytes = Capacity.parseGB(text), let layout = editingLayout, bytes <= layout.maximumBytes {
-            targetExact = layout.maximumBytes - bytes; targetText = Self.display(layout.maximumBytes - bytes)
+        if let bytes = Capacity.parseGB(text), let maximum = maximumBytes, bytes <= maximum {
+            targetExact = maximum - bytes; targetText = Self.display(maximum - bytes)
             if !canCreateLinuxPartition { createLinux = false }
         } else { targetText = ""; targetExact = nil }
         notify()
     }
-    func useAvailable() { if let layout = editingLayout { setDerivedTarget(layout.maximumBytes) } }
+    func useAvailable() { if let maximum = maximumBytes { setDerivedTarget(maximum) } }
+    /// While the bar is dragged: the fields follow without a render; the drag's
+    /// end commits through `setTarget`/`useAvailable`, which renders once.
+    func previewTarget(_ gb: Double) {
+        guard let maximum = maximumBytes else { return }
+        if gb >= Double(maximum) / 1e9 - 0.05 { targetExact = maximum; targetText = Self.display(maximum) }
+        else { targetExact = nil; targetText = String(format: "%.1f", gb) }
+        reviewedPlan = nil
+        updateFree()
+    }
     func setCreateLinux(_ value: Bool) {
         createLinux = value && canCreateLinuxPartition; reviewedPlan = nil
         notify()

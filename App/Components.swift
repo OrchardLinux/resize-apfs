@@ -98,6 +98,40 @@ final class ChangeRow: UIStackView {
 }
 
 /// Checkbox or radio option with title and optional detail.
+/// A button whose touch area is at least 44 × 44 pt however small it draws,
+/// as Apple's guidelines ask; text links and small icons get a usable target.
+class TouchButton: UIButton {
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        let grow = CGSize(width: max(0, 44 - bounds.width) / 2, height: max(0, 44 - bounds.height) / 2)
+        return bounds.insetBy(dx: -grow.width, dy: -grow.height).contains(point)
+    }
+}
+
+/// A full-width tappable row (Technical details, card actions): it dims while
+/// pressed, like a system button, and its whole height is the target.
+final class RowButton: UIControl {
+    private let action: () -> Void
+    private let content: UIView
+    init(content: UIView, minHeight: CGFloat = 44, action: @escaping () -> Void) {
+        self.action = action; self.content = content
+        super.init(frame: .zero)
+        content.isUserInteractionEnabled = false
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([content.leadingAnchor.constraint(equalTo: leadingAnchor), content.trailingAnchor.constraint(equalTo: trailingAnchor),
+                                     content.centerYAnchor.constraint(equalTo: centerYAnchor),
+                                     content.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 4),
+                                     heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight)])
+        addTarget(self, action: #selector(tapped), for: .touchUpInside)
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var isHighlighted: Bool { didSet { content.alpha = isHighlighted ? 0.35 : 1 } }
+    override var isEnabled: Bool { didSet { accessibilityTraits = isEnabled ? .button : [.button, .notEnabled] } }
+    @objc private func tapped() { action() }
+}
+
 final class OptionRow: UIControl {
     enum Kind { case checkbox, radio }
     init(_ metrics: Metrics, kind: Kind, selected: Bool, title: String, detail: String?, trailing: String? = nil, action: @escaping () -> Void) {
@@ -127,6 +161,7 @@ final class OptionRow: UIControl {
     required init?(coder: NSCoder) { fatalError() }
     private let action: () -> Void
     @objc private func tapped() { action() }
+    override var isHighlighted: Bool { didSet { subviews.first?.alpha = isHighlighted ? 0.4 : 1 } }
 }
 
 /// The bottom action button.
@@ -180,7 +215,7 @@ final class WarningBox: UIView {
                                              label(title, Theme.font(metrics.regular ? 16 : 15, .semibold, .headline), Theme.warningInk)], align: .center)
         let body = stack(.vertical, 8, [heading] + paragraphs.map { label($0, Theme.font(metrics.row), Theme.warningInk) })
         if let action {
-            let button = UIButton(type: .system)
+            let button = TouchButton(type: .system)
             button.setTitle(action.title, for: .normal)
             button.titleLabel?.font = Theme.font(metrics.row, .semibold)
             button.setTitleColor(Theme.destructive, for: .normal)
@@ -243,7 +278,9 @@ struct DiskSegment {
         if cursor <= layout.lastUsableLBA {
             result.append(DiskSegment(kind: .unallocated, bytes: (layout.lastUsableLBA - cursor + 1) * layout.sectorSize, title: "Unallocated", detail: "Unallocated"))
         }
-        return result
+        // Alignment gaps of a few MB round to "0 GB" and, drawn at a bar's end,
+        // would take its rounded corner from the partition beside them.
+        return result.filter { $0.kind != .unallocated || $0.bytes >= 50_000_000 }
     }
 }
 
@@ -254,24 +291,16 @@ func diskLegend(_ m: Metrics, _ layout: StorageLayout) -> UIView {
     let linux = sum(\.isLinux), other = sum { $0.kind != .apfs && !$0.isLinux }
     if linux > 0 { items.append((Theme.linux, "Linux  \(Capacity.gb(linux))")) }
     if other > 0 { items.append((Theme.other, "Other partitions  \(Capacity.gb(other))")) }
-    if layout.allUnallocatedBytes > 0 { items.append((Theme.unallocated, "Unallocated  \(Capacity.gb(layout.allUnallocatedBytes))")) }
+    if layout.allUnallocatedBytes >= 50_000_000 { items.append((Theme.unallocated, "Unallocated  \(Capacity.gb(layout.allUnallocatedBytes))")) }
     let perRow = m.regular ? 4 : 2
     let rows = stride(from: 0, to: items.count, by: perRow).map { start -> UIView in
         let row = stack(.horizontal, 16, items[start..<min(start + perRow, items.count)].map { item in
-            stack(.horizontal, 7, [swatch(item.0, size: 8), label(item.1, Theme.font(m.caption), Theme.muted, lines: 1)], align: .center)
+            stack(.horizontal, 7, [swatch(item.0, size: 8), label(item.1, Theme.font(m.caption), Theme.muted)], align: .center)
         }, align: .center)
         row.addArrangedSubview(spacer())
         return row
     }
     return stack(.vertical, 8, rows)
-}
-
-/// Every partition and gap in disk order, as the bar shows them, with its size.
-func partitionList(_ m: Metrics, _ layout: StorageLayout) -> UIView {
-    // Alignment gaps that round to 0 GB would only read as noise.
-    stack(.vertical, 8, DiskSegment.of(layout).filter { $0.kind != .unallocated || $0.bytes >= 50_000_000 }.map { segment in
-        LegendRow(m, swatch: segment.color, title: segment.detail, value: Capacity.gb(segment.bytes))
-    })
 }
 
 /// Proportional bar. Labels go inside wide segments when `labels` is set.
@@ -289,6 +318,7 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
     private var boundary: Boundary?
     private var views: [UIView] = []
     private let handle = UIView()
+    private var lastSent: Double?
 
     init(_ metrics: Metrics, layout: StorageLayout, labels: Bool, apfsTitle: String = "APFS", boundary: Boundary? = nil) {
         segments = DiskSegment.of(layout); showLabels = labels; self.apfsTitle = apfsTitle; self.metrics = metrics; self.boundary = boundary
@@ -331,13 +361,38 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         accessibilityValue = String(format: "%.1f GB", boundary.value)
     }
 
+    /// One coloured segment with its two labels, laid out by hand: a drag only
+    /// moves frames and changes texts, it never rebuilds views or runs auto layout.
+    private final class SegmentView: UIView {
+        let title = UILabel(), size = UILabel()
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            clipsToBounds = true
+            [title, size].forEach { $0.numberOfLines = 1; $0.lineBreakMode = .byTruncatingTail; addSubview($0) }
+        }
+        required init?(coder: NSCoder) { fatalError() }
+    }
+
+    /// Reuses the segment views whenever the number of segments stays the same.
     private func makeSegmentViews() {
-        views.forEach { $0.removeFromSuperview() }
-        views = segments.map { segment in
-            let view = UIView()
+        if views.count != segments.count {
+            views.forEach { $0.removeFromSuperview() }
+            views = segments.map { _ in
+                let view = SegmentView()
+                insertSubview(view, at: 0)
+                return view
+            }
+        }
+        for (segment, view) in zip(segments, views) {
+            guard let view = view as? SegmentView else { continue }
             view.backgroundColor = segment.color
-            insertSubview(view, at: 0)
-            return view
+            let dark = segment.kind == .unallocated || segment.kind == .other
+            view.title.font = Theme.font(metrics.caption, .semibold)
+            view.title.textColor = dark ? Theme.muted : .white
+            view.title.text = segment.kind == .apfs ? apfsTitle : segment.title
+            view.size.font = Theme.digits(metrics.caption - 1)
+            view.size.textColor = dark ? Theme.muted : UIColor(white: 1, alpha: 0.85)
+            view.size.text = Capacity.gb(segment.bytes)
         }
     }
 
@@ -355,25 +410,35 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         let total = Double(max(1, segments.reduce(0) { $0 + $1.bytes }))
         let gap: CGFloat = 3
         let usable = max(0, bounds.width - CGFloat(max(0, segments.count - 1)) * gap)
+        // Every partition stays visible (at least 3 pt); the rest share what is
+        // left in proportion, so the widths always add up to exactly the bar.
+        let raw = segments.map { usable * CGFloat(Double($0.bytes) / total) }
+        let floors = segments.map { $0.kind == .unallocated ? CGFloat(0) : 3 }
+        let raised = zip(raw, floors).map { $0 < $1 }
+        let fixed = zip(floors, raised).reduce(CGFloat(0)) { $0 + ($1.1 ? $1.0 : 0) }
+        let flexible = zip(raw, raised).reduce(CGFloat(0)) { $0 + ($1.1 ? 0 : $1.0) }
+        let scale = flexible > 0 ? max(0, usable - fixed) / flexible : 0
         var x: CGFloat = 0
-        for (segment, view) in zip(segments, views) {
-            let width = max(segment.kind == .other ? 3 : 0, usable * CGFloat(Double(segment.bytes) / total))
+        for (index, (segment, view)) in zip(segments, views).enumerated() {
+            var width = raised[index] ? floors[index] : raw[index] * scale
+            if index == segments.count - 1 { width = max(0, bounds.width - x) }
             view.frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
-            view.subviews.forEach { $0.removeFromSuperview() }
-            if showLabels, width > 72 {
-                let dark = segment.kind == .unallocated || segment.kind == .other
-                let title = label(segment.kind == .apfs ? apfsTitle : segment.title, Theme.font(metrics.caption, .semibold), dark ? Theme.muted : .white, lines: 1)
-                let size = label(Capacity.gb(segment.bytes), Theme.digits(metrics.caption - 1), dark ? Theme.muted : UIColor(white: 1, alpha: 0.85), lines: 1)
-                let text = stack(.vertical, 3, [title, size])
-                let inner = width - 24 - (segment.kind == .apfs && boundary != nil ? 22 : 0)
-                let fitted = text.systemLayoutSizeFitting(CGSize(width: inner, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
-                text.frame = CGRect(x: 12, y: (bounds.height - fitted.height) / 2, width: inner, height: fitted.height)
-                view.addSubview(text)
+            if let view = view as? SegmentView {
+                let shown = showLabels && width > 72
+                view.title.isHidden = !shown; view.size.isHidden = !shown
+                if shown {
+                    let inner = max(0, width - 24 - (segment.kind == .apfs && boundary != nil ? 22 : 0))
+                    let titleHeight = ceil(view.title.font.lineHeight), sizeHeight = ceil(view.size.font.lineHeight)
+                    let top = (bounds.height - titleHeight - 3 - sizeHeight) / 2
+                    view.title.frame = CGRect(x: 12, y: top, width: inner, height: titleHeight)
+                    view.size.frame = CGRect(x: 12, y: top + titleHeight + 3, width: inner, height: sizeHeight)
+                }
             }
             x += width + gap
         }
         if let apfs = zip(segments, views).first(where: { $0.0.kind == .apfs })?.1, boundary != nil {
             handle.frame = CGRect(x: apfs.frame.maxX - 22, y: 0, width: 22, height: bounds.height)
+            bringSubviewToFront(handle)
         }
     }
 
@@ -384,7 +449,12 @@ final class PartitionBar: UIView, UIGestureRecognizerDelegate {
         let total = Double(segments.reduce(0) { $0 + $1.bytes }) / 1e9
         let start = Double(segments.prefix { $0.kind != .apfs }.reduce(0) { $0 + $1.bytes }) / 1e9
         let value = min(max(fraction * total - start, boundary.range.lowerBound), boundary.range.upperBound)
-        boundary.changed((value * 10).rounded() / 10, pan is UITapGestureRecognizer || pan.state == .ended || pan.state == .cancelled)
+        let rounded = (value * 10).rounded() / 10
+        let finished = pan is UITapGestureRecognizer || pan.state == .ended || pan.state == .cancelled
+        // Moving within the same 0.1 GB changes nothing until the finger lifts.
+        guard finished || rounded != lastSent else { return }
+        lastSent = finished ? nil : rounded
+        boundary.changed(rounded, finished)
     }
     /// Only a sideways drag moves the boundary; vertical swipes scroll the page.
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
@@ -455,7 +525,7 @@ final class SizeField: UIView, UITextFieldDelegate {
         field.accessibilityIdentifier = identifier
         field.addTarget(self, action: #selector(edited), for: .editingChanged)
         field.delegate = self
-        let clear = UIButton(type: .custom)
+        let clear = TouchButton(type: .custom)
         clear.setImage(Icon.xCircle.image(16), for: .normal)
         clear.tintColor = Theme.faint.withAlphaComponent(0.6)
         clear.accessibilityLabel = "Clear \(title)"

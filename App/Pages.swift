@@ -34,14 +34,14 @@ struct Pages {
 
     func header() -> UIView {
         if [.editor, .review].contains(model.state) {
-            let back = UIButton(type: .system)
+            let back = TouchButton(type: .system)
             back.setImage(Icon.chevronLeft.image(18, lineWidth: 2.4), for: .normal)
             back.setTitle(model.state == .review ? " Adjust size" : " Storage", for: .normal)
             back.titleLabel?.font = Theme.font(16)
             back.tintColor = Theme.blue
             back.accessibilityIdentifier = "back"
             back.addAction { [model] in model.back() }
-            let cancel = UIButton(type: .system)
+            let cancel = TouchButton(type: .system)
             cancel.setTitle("Cancel", for: .normal)
             cancel.titleLabel?.font = Theme.font(16)
             cancel.tintColor = Theme.blue
@@ -52,7 +52,7 @@ struct Pages {
         let device = model.isSimulator ? ["Simulator · Mock storage"] : [UIDevice.current.model, osLine]
         var trailing: [UIView] = []
         if model.isSimulator {
-            let lab = UIButton(type: .system)
+            let lab = TouchButton(type: .system)
             lab.setImage(Icon.flask.image(22), for: .normal)
             lab.tintColor = Theme.blue
             lab.accessibilityLabel = "Mock scenarios"
@@ -157,17 +157,10 @@ struct Pages {
                                 valueIdentifier: "Adjacent unallocated spaceValue"))
         let rule = UIView(); rule.backgroundColor = Theme.line
         rule.heightAnchor.constraint(equalToConstant: 1).isActive = true
-        let details = UIButton(type: .system)
-        details.contentHorizontalAlignment = .fill
+        let details = RowButton(content: stack(.horizontal, 8, [label("Technical details", Theme.font(m.row + 1)), spacer(),
+                                                                Icon.chevronRight.view(17, color: Theme.faint)], align: .center)) { [weak root] in root?.showTechnical() }
         details.accessibilityIdentifier = "technicalDetails"
         details.accessibilityLabel = "Technical details"
-        let row = stack(.horizontal, 8, [label("Technical details", Theme.font(m.row + 1)), spacer(), Icon.chevronRight.view(17, color: Theme.faint)], align: .center)
-        row.isUserInteractionEnabled = false
-        row.translatesAutoresizingMaskIntoConstraints = false
-        details.addSubview(row)
-        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: details.leadingAnchor), row.trailingAnchor.constraint(equalTo: details.trailingAnchor),
-                                     row.topAnchor.constraint(equalTo: details.topAnchor, constant: 4), row.bottomAnchor.constraint(equalTo: details.bottomAnchor, constant: -4)])
-        details.addAction { [weak root] in root?.showTechnical() }
         var figures: [UIView] = [top, capacities, usage, stack(.vertical, 10, legend)]
         if let offer = snapshotOffer(layout, editor: false) { figures.append(offer) }
         figures.append(rule)
@@ -198,19 +191,12 @@ struct Pages {
 
     /// A full-width row in a card that runs an action, like "Technical details".
     private func cardAction(_ title: String, color: UIColor, identifier: String, action: @escaping () -> Void) -> UIView {
-        let button = UIButton(type: .system)
-        button.contentHorizontalAlignment = .fill
+        let row = stack(.horizontal, 8, [label(title, Theme.font(m.row + 1), model.busy ? Theme.faint : color), spacer(),
+                                         Icon.chevronRight.view(17, color: model.busy ? Theme.faint : color)], align: .center)
+        let button = RowButton(content: row, action: action)
         button.accessibilityIdentifier = identifier
         button.accessibilityLabel = title
         button.isEnabled = !model.busy
-        let row = stack(.horizontal, 8, [label(title, Theme.font(m.row + 1), model.busy ? Theme.faint : color), spacer(),
-                                         Icon.chevronRight.view(17, color: model.busy ? Theme.faint : color)], align: .center)
-        row.isUserInteractionEnabled = false
-        row.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(row)
-        NSLayoutConstraint.activate([row.leadingAnchor.constraint(equalTo: button.leadingAnchor), row.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-                                     row.topAnchor.constraint(equalTo: button.topAnchor, constant: 4), row.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -4)])
-        button.addAction(action)
         return button
     }
 

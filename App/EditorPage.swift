@@ -34,11 +34,12 @@ final class EditorPage: UIStackView {
 
         let fields = stack(.horizontal, m.regular ? 24 : 12, [target, free], align: .top)
         fields.distribution = .fillEqually
-        let use = UIButton(type: .system)
+        let use = TouchButton(type: .system)
         use.setTitle("Use available space", for: .normal)
         use.titleLabel?.font = Theme.font(m.caption, .semibold)
         use.tintColor = Theme.blue
         use.contentHorizontalAlignment = .leading
+        use.contentEdgeInsets = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 12)
         use.accessibilityIdentifier = "useAvailable"
         use.addAction { [model] in model.useAvailable() }
         use.setContentHuggingPriority(.required, for: .horizontal)
@@ -57,7 +58,7 @@ final class EditorPage: UIStackView {
     private var range: ClosedRange<Double> {
         guard let layout = model.editingLayout else { return 0...0 }
         let low = Double(layout.minimumContainerBytes ?? layout.containerBytes) / 1e9
-        let high = Double(layout.maximumBytes) / 1e9
+        let high = Double(model.maximumBytes ?? layout.maximumBytes) / 1e9
         return min(low, high)...high
     }
 
@@ -66,17 +67,9 @@ final class EditorPage: UIStackView {
         let outOfRange = model.editorMessage != nil && !model.unchanged
         target.update(text: model.targetText, error: outOfRange)
         free.update(text: model.freeText, error: false)
-        let range = self.range
         let current = Double(model.targetBytes ?? layout.containerBytes) / 1e9
-        let shown = model.localPlan?.after ?? editing
-        legendSlot.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        legendSlot.addArrangedSubview(partitionList(m, shown))
-        bar.update(layout: shown, boundary: PartitionBar.Boundary(
-            range: range, value: min(max(current, range.lowerBound), range.upperBound),
-            changed: { [model] value, _ in
-                if value >= range.upperBound - 0.05 { model.useAvailable() }
-                else { model.setTarget(String(format: "%.1f", value)) }
-            }))
+        updateList(model.localPlan?.after ?? editing)
+        bar.update(layout: model.localPlan?.after ?? editing, boundary: barBoundary(current))
         freeCaption.text = "\(Capacity.gb(layout.freeInsideBytes)) free within APFS. Supported resize limits are checked separately."
 
         messageSlot.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -89,13 +82,18 @@ final class EditorPage: UIStackView {
         if let offer = snapshotOffer?(layout) { dynamic.addArrangedSubview(offer) }
         let following = model.followingPartitions
         if model.canEraseFollowing && layout.growthSupported {
-            let size = following.reduce(0) { $0 + $1.blocks * layout.sectorSize }
-            let names = following.map { "\($0.label) (\($0.bsdName))" }.joined(separator: ", ")
-            dynamic.addArrangedSubview(Card(m, spacing: 0, [OptionRow(m, kind: .checkbox, selected: model.eraseFollowing,
-                title: "Erase \(names) · \(Capacity.gb(size))\(following.count > 1 ? " in total" : "")",
-                detail: "Growing APFS needs the space after it. This erases the Linux installation on \(following.count == 1 ? "this partition" : "these partitions").") { [model] in
-                    model.setEraseFollowing(!model.eraseFollowing)
-                }]))
+            let option = OptionRow(m, kind: .checkbox, selected: model.eraseFollowing,
+                                   title: following.count == 1 ? "Erase the Linux partition after APFS" : "Erase the Linux partitions after APFS",
+                                   detail: nil, trailing: nil) { [model] in model.setEraseFollowing(!model.eraseFollowing) }
+            option.accessibilityIdentifier = "eraseFollowing"
+            // The partitions themselves, aligned with the option's title (20 pt box + 12 pt gap).
+            let rows = following.map { part in
+                LegendRow(m, swatch: Theme.linux, title: "\(part.label) · \(part.bsdName)", value: Capacity.gb(part.blocks * layout.sectorSize))
+            }
+            let list = stack(.vertical, 8, rows)
+            list.layoutMargins = UIEdgeInsets(top: 4, left: 32, bottom: 6, right: 0)
+            list.isLayoutMarginsRelativeArrangement = true
+            dynamic.addArrangedSubview(Card(m, spacing: 6, [option, list]))
         }
         dynamic.addArrangedSubview(resultingLayout(layout))
         if model.canCreateLinuxPartition {
@@ -107,6 +105,45 @@ final class EditorPage: UIStackView {
             create.accessibilityIdentifier = "createLinux"
             dynamic.addArrangedSubview(Card(m, spacing: 4, [label(shrinking ? "Space you free" : "Unallocated space", Theme.font(m.heading, .semibold, .headline)), leave, create]))
         }
+    }
+
+    /// During a drag only the fields, the bar and the list follow; the cards
+    /// below update once when the finger lifts.
+    private func preview(_ value: Double) {
+        model.previewTarget(value)
+        guard let editing = model.editingLayout else { return }
+        let shown = model.localPlan?.after ?? editing
+        target.update(text: model.targetText, error: false)
+        free.update(text: model.freeText, error: false)
+        updateList(shown)
+        bar.update(layout: shown, boundary: barBoundary(value))
+    }
+    /// The bar's range and callback for `value`, shared by update and preview.
+    private func barBoundary(_ value: Double) -> PartitionBar.Boundary {
+        let range = self.range
+        return PartitionBar.Boundary(range: range, value: min(max(value, range.lowerBound), range.upperBound),
+            changed: { [weak self, model] value, finished in
+                guard finished else { self?.preview(value); return }
+                if value >= range.upperBound - 0.05 { model.useAvailable() }
+                else { model.setTarget(String(format: "%.1f", value)) }
+            })
+    }
+
+    /// The partition list keeps its rows while only the sizes change.
+    private var listKey = ""
+    private var listRows: [LegendRow] = []
+    private func updateList(_ layout: StorageLayout) {
+        let segments = DiskSegment.of(layout)
+        let key = segments.map(\.detail).joined(separator: "|")
+        if key == listKey, listRows.count == segments.count {
+            for (row, segment) in zip(listRows, segments) { row.valueLabel.text = Capacity.gb(segment.bytes) }
+            return
+        }
+        listKey = key
+        legendSlot.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        listRows = segments.map { LegendRow(m, swatch: $0.color, title: $0.detail, value: Capacity.gb($0.bytes)) }
+        listRows.forEach { legendSlot.addArrangedSubview($0) }
+        legendSlot.spacing = 8
     }
 
     /// Why the typed size can't be reviewed, in the user's terms where possible.
