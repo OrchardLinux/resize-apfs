@@ -8,7 +8,8 @@ connection then:
   2. copies the app to /Applications and the helper to /var/root/ResizeAPFS/session,
   3. has the helper register the app with the home screen,
   4. runs the helper as root while the user resizes in the app,
-  5. after the user is done: stops the helper, unregisters and deletes the app.
+  5. after the user is done: stops the helper, unregisters and deletes the app (the helper
+     quits a running app first and waits until iOS has let go of it).
 
 Only `sh`, `mkdir`, `cat`, `chmod`, `rm` and `kill` are used on the device; registering the app
 is our helper's job, so nothing depends on other tools in checkra1n's package. The helper's

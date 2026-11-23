@@ -231,20 +231,25 @@ static int raf_snapshot_change(const char *mount_path, const char *name, int cre
 int raf_delete_snapshot(const char *mount_path, const char *name) { return raf_snapshot_change(mount_path, name, 0); }
 int raf_create_snapshot(const char *mount_path, const char *name) { return raf_snapshot_change(mount_path, name, 1); }
 
-int raf_process_running(const char *name) {
+pid_t raf_process_pid(const char *name) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
     size_t size = 0;
     if (sysctl(mib, 4, NULL, &size, NULL, 0) != 0) return -1;
     size += size / 4;
     struct kinfo_proc *procs = malloc(size);
     if (!procs) return -1;
-    int found = -1;
+    pid_t found = -1;
     if (sysctl(mib, 4, procs, &size, NULL, 0) == 0) {
         found = 0;
         size_t want = strlen(name) < 15 ? strlen(name) : 15;
         for (size_t i = 0; i < size / sizeof(struct kinfo_proc) && !found; i++)
-            if (strncmp(procs[i].kp_proc.p_comm, name, want) == 0) found = 1;
+            if (strncmp(procs[i].kp_proc.p_comm, name, want) == 0) found = procs[i].kp_proc.p_pid;
     }
     free(procs);
     return found;
+}
+
+int raf_process_running(const char *name) {
+    pid_t pid = raf_process_pid(name);
+    return pid < 0 ? -1 : pid > 0;
 }

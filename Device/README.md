@@ -106,7 +106,13 @@ over checkra1n's SSH server, for one session only. On the device it uses only
 `sh`, `mkdir`, `cat`, `chmod`, `rm` and `kill`. The iOS 12-14 helper must accept:
 
 - `--register-app PATH` / `--unregister-app PATH`: add the app to, or remove it from, the
-  home screen (what `uicache` does), exit 0 on success.
+  home screen (what `uicache` does), exit 0 on success. Unregistering quits a running app
+  first: FrontBoard terminates it (`FBSSystemService`, entitlement
+  `com.apple.multitasking.termination`), as the app switcher does, and the app is removed
+  only once its process is gone and FrontBoard no longer reports one for it. Each wait has a
+  10-second deadline; an app FrontBoard did not end is killed and waited for once more, and an
+  app still running after that is not removed (exit 1). An app removed while it runs leaves a
+  black screen the Home button does not leave.
 - `--session --allow-writes --ui-path PATH`: serve the app in the foreground as on the
   palera1n route, trusting the app executable at PATH instead of the overlay's.
 - `--operation-active`: exit 0 while a resize it started is still running, else 1.

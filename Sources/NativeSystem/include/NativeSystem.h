@@ -23,4 +23,6 @@ int raf_create_snapshot(const char *mount_path, const char *name);
 /* 1 when a process whose name starts with `name` (at most 15 characters, as the kernel
    keeps it) runs, 0 when none does, -1 when the process list cannot be read. */
 int raf_process_running(const char *name);
+/* The process id of such a process, 0 when none runs, -1 when the list cannot be read. */
+pid_t raf_process_pid(const char *name);
 #endif
