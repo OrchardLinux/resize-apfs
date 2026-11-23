@@ -2,9 +2,9 @@
 
 ## Status
 
-APFS shrinking and growing have been hardware-tested on iPad (6th generation,
-Wi-Fi / J71b), iPadOS 17.7.11. Linux partition creation and other device/OS
-combinations are not yet verified.
+See the tested devices in the [README](../README.md#requirements). The iOS 12-14
+route, erasing Linux partitions and removing the `orig-fs` snapshot have not run on
+a device yet.
 
 ## Build and prepare
 
@@ -16,8 +16,9 @@ Developers need Xcode and `ldid`:
 ```
 
 Release users run `./resize-apfs prepare` or `./resize-apfs boot` from the extracted
-ZIP. palera1n 2.4+ must be installed separately. The launcher checks its version,
-overlay capability and embedded filesystem layout. `upstream.lock.json` records
+ZIP. The launcher downloads the pinned palera1n into Orchard's shared cache (or uses
+the one `PALERA1N` names) and checks its version, overlay capability and embedded
+filesystem layout. `upstream.lock.json` records
 the original reference build, not a runtime whitelist.
 
 The launcher extracts that binpack locally and replaces the stock loader app with
@@ -30,8 +31,8 @@ shell listeners are disabled. Existing jailbreak services outside this overlay
 are not removed or reconfigured.
 
 Preparation modifies only generated image files. It does not contact a device.
-Booting requires explicit confirmation, and storage writes require a separate
-review and confirmation in the app.
+Storage writes require a review and confirmation in the app; booting does not
+change storage.
 
 ## Host image preparation
 

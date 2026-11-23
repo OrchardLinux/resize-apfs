@@ -2,7 +2,9 @@
 
 Resize your iPhone or iPad’s APFS storage to make room for Linux. A native app
 handles APFS resizing, partition-table updates and readback verification. You can
-leave the released space unallocated or create an unformatted Linux partition.
+leave the released space unallocated or create an unformatted Linux partition, and
+erase Linux partitions after APFS to give their space back. On iOS 12 to 14 it can
+also remove the `orig-fs` snapshot that keeps APFS from shrinking further.
 
 **Experimental. Back up your device first. Storage changes can cause data loss.**
 
@@ -44,10 +46,11 @@ Other devices and iOS versions are untested.
 > **Boot tips**
 > - **Before DFU:** close browsers that may use WebUSB. In Chrome, you can disable
 >   USB access at `chrome://settings/content/usbDevices`.
-> - **Stuck at the Apple logo after palera1n starts?** Briefly disconnect the cable
+> - **Stuck at the Apple logo after the boot starts?** Briefly disconnect the cable
 >   from the device, then reconnect it.
-> - **`Timed out waiting for download mode` after `Checkmate!`?** The device returns to
->   iOS on its own. Enter DFU and run `./resize-apfs boot` again; it often takes a few tries.
+> - **The boot fails and the device returns to iOS on its own?** Enter DFU and run
+>   `./resize-apfs boot` again; it often takes a few tries. The end of the tool's log
+>   is shown with the failure.
 
 1. Back up your device.
 2. Download the release ZIP from [GitHub Releases](https://github.com/OrchardLinux/resize-apfs/releases) and unzip it.
@@ -67,10 +70,9 @@ Other devices and iOS versions are untested.
    the app again.
 
 4. Wait for iOS/iPadOS to finish starting normally, then unlock your device.
-5. Wait for the Resize APFS icon to appear on the Home Screen. **This can take
-   about a minute.** Once the icon appears, open **Resize APFS**.
-6. Choose **Adjust size**, enter your target, then review and confirm the changes.
-7. Wait for **Completed and verified** before restarting the device.
+   Resize APFS opens by itself. If it doesn't, open it from the Home Screen.
+5. Choose **Adjust size**, enter your target, then review and confirm the changes.
+6. Wait for **Completed and verified** before restarting the device.
 
 Booting loads the utility; it does not automatically resize anything. On Linux,
 only starting palera1n or checkra1n may prompt for sudo; image preparation does not
@@ -92,12 +94,16 @@ The privileged helper calls Apple’s APFS framework already installed on the
 device. It coordinates APFS and GPT changes and verifies the resulting layout.
 Creating a Linux partition does not format it or install Linux.
 
-palera1n is an external dependency, not included in the release. No framework or
-firmware is bundled.
+On iOS 15 and later, palera1n boots iOS with Resize APFS in a read-only overlay;
+on iOS 12 to 14, checkra1n boots iOS and the launcher copies the app in over SSH
+through the USB cable for one session, then removes it. Neither palera1n nor
+checkra1n is part of the release: the launcher downloads the pinned version. No
+Apple framework or firmware is bundled.
 
 ## Development
 
-Open `ResizeAPFS.xcodeproj`, or run an existing simulator with:
+Open `ResizeAPFS.xcodeproj` (it builds for iOS 15 and later), or run an existing
+simulator with:
 
 ```sh
 ./scripts/run-simulator.sh
@@ -124,6 +130,7 @@ To build and package locally:
 
 ```sh
 ./scripts/build-device.sh
+./scripts/build-device-ios12.sh   # the iOS 12-14 app and helper (Xcode can't target iOS 12)
 ./scripts/package-release.sh preview
 ```
 
