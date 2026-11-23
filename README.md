@@ -16,8 +16,7 @@ also remove the `orig-fs` snapshot that keeps APFS from shrinking further.
 ## Requirements
 
 - An iPhone, iPad or iPod touch with a checkm8 chip (A8 to A11) on iOS/iPadOS 15 or later,
-  or any checkm8 device (A7 to A11) on iOS 12 to 14. The iOS 12-14 route needs the iOS 12
-  app, which is not in a release yet.
+  or any checkm8 device (A7 to A11) on iOS 12 to 14.
 - Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
 - Python 3.9 or later and a USB connection to the device.
 
@@ -37,6 +36,9 @@ Tested on hardware:
 - iPad mini 4 (Wi-Fi / J96), iPadOS 15.8.3, palera1n 3.0.0 beta 3 from a Linux host:
   shrinking and creating a Linux partition
   ([#5](https://github.com/OrchardLinux/resize-apfs/pull/5)).
+- iPod touch 6 (N102), iOS 12.4, checkra1n from macOS on Apple Silicon: removing a Linux
+  partition, growing APFS back (after one restart) and shrinking again
+  ([#7](https://github.com/OrchardLinux/resize-apfs/pull/7)).
 
 Other devices and iOS versions are untested.
 
