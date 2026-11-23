@@ -33,8 +33,17 @@ public enum SessionTrust {
 }
 
 /// Adds the session's app to the home screen and removes it again, as `uicache`
-/// does, through LaunchServices. Only bundles directly in /Applications.
+/// does, through LaunchServices. Only bundles directly in `folder`.
+///
+/// The folder is on the data partition: a stock checkra1n boot mounts the system
+/// snapshot read-only, and the session must not change the system partition. A
+/// system app outside /Applications is what checkra1n itself registers on every
+/// boot (its loader, /var/binpack/Applications/loader.app, via `uicache --path`).
 public enum AppRegistration {
+    /// The session folder (scripts/checkra1n_route.py). Its real path: the kernel
+    /// reports the app's executable under /private/var, not through the /var link.
+    public static let folder = "/private/var/ResizeAPFS"
+
     public struct Bundle: Equatable {
         public var path: String
         public var identifier: String
@@ -44,8 +53,8 @@ public enum AppRegistration {
     public static func validate(_ path: String) throws -> Bundle {
         let url = URL(fileURLWithPath: path).standardizedFileURL
         guard path.hasPrefix("/"), url.path == path,
-              url.deletingLastPathComponent().path == "/Applications", url.pathExtension == "app" else {
-            throw ResizeError("Only an app bundle directly in /Applications can be registered.")
+              url.deletingLastPathComponent().path == folder, url.pathExtension == "app" else {
+            throw ResizeError("Only an app bundle directly in \(folder) can be registered.")
         }
         var info = stat()
         guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
@@ -68,7 +77,7 @@ public enum AppRegistration {
         let bundle = try validate(path)
         #if os(iOS)
         let workspace = try defaultWorkspace()
-        // The record uicache writes for a system app in /Applications.
+        // The record uicache writes for a system app (also outside /Applications).
         let record: NSDictionary = [
             "ApplicationType": "System",
             "CFBundleIdentifier": bundle.identifier,

@@ -3,6 +3,7 @@ import io
 import os
 import pathlib
 import plistlib
+import shlex
 import socket
 import struct
 import subprocess
@@ -290,19 +291,30 @@ class SessionTests(unittest.TestCase):
         session = checkra1n_route.Session(self.work, run=recorder)
         checkra1n_route.install(session, self.app, self.helper)
         joined = '\n'.join(recorder.commands)
-        self.assertIn('cat > /var/root/ResizeAPFS/session/resize-helper && chmod 755', joined)
-        self.assertIn('cat > /Applications/ResizeAPFS.app/ResizeAPFS && chmod 755', joined)
-        self.assertIn('cat > /Applications/ResizeAPFS.app/Info.plist && chmod 644', joined)
-        self.assertIn('/Applications/ResizeAPFS.app/Base.lproj', joined)
+        self.assertIn('mkdir -p /private/var/ResizeAPFS && chmod 755 /private/var/ResizeAPFS', joined)
+        self.assertIn('cat > /private/var/ResizeAPFS/resize-helper && chmod 755', joined)
+        self.assertIn('cat > /private/var/ResizeAPFS/ResizeAPFS.app/ResizeAPFS && chmod 755', joined)
+        self.assertIn('cat > /private/var/ResizeAPFS/ResizeAPFS.app/Info.plist && chmod 644', joined)
+        self.assertIn('/private/var/ResizeAPFS/ResizeAPFS.app/Base.lproj', joined)
         self.assertIn(b'helper', recorder.inputs)
-        self.assertEqual(recorder.commands[-1], '/var/root/ResizeAPFS/session/resize-helper --register-app /Applications/ResizeAPFS.app')
+        self.assertEqual(recorder.commands[-1], '/private/var/ResizeAPFS/resize-helper --register-app /private/var/ResizeAPFS/ResizeAPFS.app')
+
+    def test_install_writes_only_to_the_data_partition(self):
+        """A stock checkra1n boot mounts the system partition read-only: no step may need it writable."""
+        recorder = Recorder()
+        checkra1n_route.install(checkra1n_route.Session(self.work, run=recorder), self.app, self.helper)
+        for command in recorder.commands:
+            for word in shlex.split(command.replace(';', ' ').replace('&&', ' ')):
+                if word.startswith('/'):
+                    self.assertTrue(word.startswith('/private/var/ResizeAPFS'), command)
+        self.assertNotIn('/Applications', '\n'.join(recorder.commands))
 
     def test_an_executable_without_its_execute_bit_is_still_installed_executable(self):
         (self.app / 'ResizeAPFS').write_bytes(b'\xcf\xfa\xed\xfe' + b'\0' * 12)
         (self.app / 'ResizeAPFS').chmod(0o644)
         recorder = Recorder()
         checkra1n_route.install(checkra1n_route.Session(self.work, run=recorder), self.app, self.helper)
-        self.assertIn('cat > /Applications/ResizeAPFS.app/ResizeAPFS && chmod 755', '\n'.join(recorder.commands))
+        self.assertIn('cat > /private/var/ResizeAPFS/ResizeAPFS.app/ResizeAPFS && chmod 755', '\n'.join(recorder.commands))
 
     def test_a_failing_step_names_itself(self):
         session = checkra1n_route.Session(self.work, run=Recorder(failing=('--register-app',)))
@@ -315,9 +327,29 @@ class SessionTests(unittest.TestCase):
         process = mock.Mock()
         checkra1n_route.finish(session, process)
         self.assertIn('kill', recorder.commands[0])
-        self.assertEqual(recorder.commands[-1], '/var/root/ResizeAPFS/session/resize-helper --unregister-app '
-                         '/Applications/ResizeAPFS.app; rm -rf /Applications/ResizeAPFS.app /var/root/ResizeAPFS/session')
+        self.assertEqual(recorder.commands[-1], '/private/var/ResizeAPFS/resize-helper --unregister-app '
+                         '/private/var/ResizeAPFS/ResizeAPFS.app; rm -rf /private/var/ResizeAPFS')
         process.wait.assert_called_once()
+
+    def test_leftovers_are_removed_from_the_session_folder_and_the_old_location(self):
+        recorder = Recorder()
+        checkra1n_route.remove_leftovers(checkra1n_route.Session(self.work, run=recorder))
+        script = recorder.commands[-1]
+        # The old location's own helper unregisters its app; then the current session folder.
+        self.assertIn('if [ -x /var/root/ResizeAPFS/session/resize-helper ] && [ -d /Applications/ResizeAPFS.app ]; '
+                      'then /var/root/ResizeAPFS/session/resize-helper --unregister-app /Applications/ResizeAPFS.app; fi; '
+                      'rm -rf /Applications/ResizeAPFS.app /var/root/ResizeAPFS/session', script)
+        self.assertIn('if [ -x /private/var/ResizeAPFS/resize-helper ] && [ -d /private/var/ResizeAPFS/ResizeAPFS.app ]; '
+                      'then /private/var/ResizeAPFS/resize-helper --unregister-app /private/var/ResizeAPFS/ResizeAPFS.app; fi; '
+                      'rm -rf /private/var/ResizeAPFS/ResizeAPFS.app /private/var/ResizeAPFS', script)
+        self.assertLess(script.index('/Applications/ResizeAPFS.app'), script.index('/private/var/ResizeAPFS/resize-helper'))
+
+    def test_the_helper_serves_the_app_in_the_session_folder(self):
+        session = checkra1n_route.Session(self.work, run=Recorder())
+        popen = mock.Mock()
+        checkra1n_route.start_helper(session, popen=popen)
+        self.assertTrue(popen.call_args.args[0][-1].endswith(
+            'exec /private/var/ResizeAPFS/resize-helper --session --allow-writes --ui-path /private/var/ResizeAPFS/ResizeAPFS.app/ResizeAPFS'))
 
     def test_the_session_never_saves_a_host_key_or_offers_our_keys(self):
         session = checkra1n_route.Session(self.work, run=Recorder())

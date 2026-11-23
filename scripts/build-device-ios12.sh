@@ -30,7 +30,7 @@ swiftc -parse-as-library -emit-library -static -emit-module -module-name ResizeD
   Sources/ResizeDevice/*.swift -o "$build/libResizeDevice.a"
 swiftc -I "$build" -I Sources/NativeSystem/include -L "$build" -lResizeDevice -lResizeCore \
   "$build/NativeSystem.o" Sources/ResizeHelper/main.swift \
-  -Xlinker -rpath -Xlinker /Applications/ResizeAPFS.app/Frameworks -o "$out/resize-helper"
+  -Xlinker -rpath -Xlinker /private/var/ResizeAPFS/ResizeAPFS.app/Frameworks -o "$out/resize-helper"
 
 app="$out/ResizeAPFS.app"
 mkdir -p "$app"

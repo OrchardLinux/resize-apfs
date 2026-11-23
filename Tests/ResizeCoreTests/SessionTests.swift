@@ -28,13 +28,19 @@ final class SessionTests: XCTestCase {
         XCTAssertThrowsError(try SessionTrust.validatedUIPath(binary.path), "others could swap the file through its directory")
     }
 
-    func testOnlyBundlesDirectlyInApplicationsAreRegistered() {
-        for path in ["/Applications", "/Applications/Other/ResizeAPFS.app", "/Applications/../tmp/ResizeAPFS.app",
-                     "/var/root/ResizeAPFS.app", "/Applications/ResizeAPFS", "Applications/ResizeAPFS.app"] {
-            XCTAssertThrowsError(try AppRegistration.validate(path), path)
+    func testOnlyBundlesDirectlyInTheSessionFolderAreRegistered() {
+        XCTAssertEqual(AppRegistration.folder, "/private/var/ResizeAPFS")
+        // The system partition is read-only on a stock checkra1n boot; /var is a link the
+        // kernel never reports for a running executable.
+        for path in ["/Applications/ResizeAPFS.app", "/var/ResizeAPFS/ResizeAPFS.app", "/private/var/ResizeAPFS",
+                     "/private/var/ResizeAPFS/Other/ResizeAPFS.app", "/private/var/ResizeAPFS/../tmp/ResizeAPFS.app",
+                     "/var/root/ResizeAPFS.app", "/private/var/ResizeAPFS/ResizeAPFS", "private/var/ResizeAPFS/ResizeAPFS.app"] {
+            XCTAssertThrowsError(try AppRegistration.validate(path), path) { error in
+                XCTAssertTrue("\(error.localizedDescription)".contains("directly in /private/var/ResizeAPFS"), path)
+            }
         }
         // Well-formed but absent on this Mac: refused for the missing bundle, not the path.
-        XCTAssertThrowsError(try AppRegistration.validate("/Applications/ResizeAPFS-test-\(UUID().uuidString).app")) { error in
+        XCTAssertThrowsError(try AppRegistration.validate("/private/var/ResizeAPFS/ResizeAPFS-test-\(UUID().uuidString).app")) { error in
             XCTAssertTrue("\(error.localizedDescription)".contains("not an app bundle directory"))
         }
     }

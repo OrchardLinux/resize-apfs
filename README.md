@@ -104,7 +104,8 @@ Creating a Linux partition does not format it or install Linux.
 
 On iOS 15 and later, palera1n boots iOS with Resize APFS in a read-only overlay;
 on iOS 12 to 14, checkra1n boots iOS and the launcher copies the app in over SSH
-through the USB cable for one session, then removes it. Neither palera1n nor
+through the USB cable for one session, then removes it. On both, the system partition
+stays read-only and unchanged; nothing like checkra1n's "Install Cydia" is needed. Neither palera1n nor
 checkra1n is part of the release: the launcher downloads the pinned version. No
 Apple framework or firmware is bundled.
 

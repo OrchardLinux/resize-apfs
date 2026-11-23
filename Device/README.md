@@ -112,13 +112,25 @@ configuration and disabled network listeners.
 
 ## iOS 12-14 (checkra1n route)
 
-`scripts/checkra1n_route.py` copies `out/device-ios12/ResizeAPFS.app` to
-`/Applications` and `out/device-ios12/resize-helper` to `/var/root/ResizeAPFS/session`
+`scripts/checkra1n_route.py` copies `out/device-ios12/ResizeAPFS.app` and
+`out/device-ios12/resize-helper` to `/private/var/ResizeAPFS` (root-owned, mode 755)
 over checkra1n's SSH server, for one session only. On the device it uses only
-`sh`, `mkdir`, `cat`, `chmod`, `rm` and `kill`. The iOS 12-14 helper must accept:
+`sh`, `mkdir`, `cat`, `chmod`, `rm` and `kill`.
+
+Nothing goes to the system partition. A stock checkra1n boot mounts the system snapshot
+read-only (`mount -uw /` fails with EBUSY), and making it writable means checkra1n's
+"Install Cydia", which renames the snapshot: the session never asks for that. The app is
+registered as an unsandboxed system app from the data partition, as checkra1n 0.12.4
+registers its own loader on every boot: its post-mount hook runs
+`/binpack/usr/bin/uicache --path /var/binpack/Applications/loader.app/`, with the loader
+image mounted at `/var/binpack`. checkra1n's kernel patches let ad-hoc signed binaries run
+from any path. Earlier releases used `/Applications/ResizeAPFS.app` and
+`/var/root/ResizeAPFS/session` (only on a writable system partition); the route removes
+leftovers from there too. The iOS 12-14 helper must accept:
 
 - `--register-app PATH` / `--unregister-app PATH`: add the app to, or remove it from, the
-  home screen (what `uicache` does), exit 0 on success. Unregistering quits a running app
+  home screen (what `uicache` does), exit 0 on success. PATH must be an app bundle directly
+  in `/private/var/ResizeAPFS`. Unregistering quits a running app
   first: FrontBoard terminates it (`FBSSystemService`, entitlement
   `com.apple.multitasking.termination`), as the app switcher does, and the app is removed
   only once its process is gone and FrontBoard no longer reports one for it. Each wait has a
@@ -135,6 +147,6 @@ over checkra1n's SSH server, for one session only. On the device it uses only
 `scripts/build-device-ios12.sh` builds both for iOS 12.0 and later (not yet part of a release).
 iOS 12.0 and 12.1 have no Swift runtime, so the app bundles Apple's back-deployment runtime in
 `ResizeAPFS.app/Frameworks`; both binaries search `/usr/lib/swift` first, so iOS 12.2 and later
-use the system's. The helper's second search path is `/Applications/ResizeAPFS.app/Frameworks`:
+use the system's. The helper's second search path is `/private/var/ResizeAPFS/ResizeAPFS.app/Frameworks`:
 on iOS 12.0-12.1 every helper command needs the app installed, which the route guarantees by
 copying the app before the first helper command and removing it after the last.

@@ -5,11 +5,16 @@ checkra1n has no overlay for our files, but every checkra1n boot starts an SSH s
 connection then:
 
   1. removes what an interrupted earlier session left behind,
-  2. copies the app to /Applications and the helper to /var/root/ResizeAPFS/session,
+  2. copies the app and the helper to /private/var/ResizeAPFS,
   3. has the helper register the app with the home screen,
   4. runs the helper as root while the user resizes in the app,
   5. after the user is done: stops the helper, unregisters and deletes the app (the helper
      quits a running app first and waits until iOS has let go of it).
+
+Everything goes to the data partition, never to the system partition: a stock checkra1n boot
+mounts the system snapshot read-only (`mount -uw /` fails), and the core install flow must not
+change it (no "Install Cydia"). An app outside /Applications is registered as a system app,
+exactly as checkra1n registers its own loader app from /var/binpack/Applications/loader.app.
 
 Only `sh`, `mkdir`, `cat`, `chmod`, `rm` and `kill` are used on the device; registering the app
 is our helper's job, so nothing depends on other tools in checkra1n's package. The helper's
@@ -30,10 +35,15 @@ from image_format import require
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PAYLOAD = ROOT / 'out/device-ios12'
-APP = '/Applications/ResizeAPFS.app'
-SESSION = '/var/root/ResizeAPFS/session'
+# Root-owned, readable by everyone (the app runs as mobile), on the data partition. The helper
+# accepts only an app directly in this folder (AppRegistration in Session.swift).
+SESSION = '/private/var/ResizeAPFS'
+APP = SESSION + '/ResizeAPFS.app'
 HELPER = SESSION + '/resize-helper'
 PIDFILE = SESSION + '/helper.pid'
+# Where earlier releases put them; only possible on a writable system partition.
+OLD_APP = '/Applications/ResizeAPFS.app'
+OLD_SESSION = '/var/root/ResizeAPFS/session'
 SSH_PORT = 44
 # checkra1n's SSH server accepts root with iOS's default password.
 PASSWORD = 'alpine'
@@ -89,7 +99,7 @@ class Session:
     def put_tree(self, local, remote):
         local = pathlib.Path(local)
         directories = [remote] + [remote + '/' + p.relative_to(local).as_posix() for p in sorted(local.rglob('*')) if p.is_dir()]
-        self.sh('mkdir -p ' + ' '.join(shlex.quote(d) for d in directories), 'Creating the app folder')
+        self.sh('umask 022; mkdir -p ' + ' '.join(shlex.quote(d) for d in directories), 'Creating the app folder')
         for path in sorted(local.rglob('*')):
             require(not path.is_symlink(), f'The app must not contain links: {path}')
             if path.is_file():
@@ -106,15 +116,24 @@ def is_macho(path):
         return stream.read(4) in MACHO_MAGIC
 
 
+def leftover_script(session_folder, app):
+    pidfile, helper = session_folder + '/helper.pid', session_folder + '/resize-helper'
+    return (f'if [ -f {pidfile} ]; then kill "$(cat {pidfile})" 2>/dev/null; rm -f {pidfile}; fi; '
+            f'if [ -x {helper} ] && [ -d {app} ]; then {helper} --unregister-app {app}; fi; '
+            f'rm -rf {app} {session_folder}')
+
+
 def remove_leftovers(session):
-    """Undo an earlier session that ended before its cleanup. Safe when there is none."""
-    session.sh(f'if [ -f {PIDFILE} ]; then kill "$(cat {PIDFILE})" 2>/dev/null; rm -f {PIDFILE}; fi; '
-               f'if [ -x {HELPER} ] && [ -d {APP} ]; then {HELPER} --unregister-app {APP}; fi; '
-               f'rm -rf {APP} {SESSION}', 'Removing an earlier session')
+    """Undo an earlier session that ended before its cleanup, also one from the old location
+    (its own helper unregisters its app). Safe when there is none: removing a path that does
+    not exist succeeds on a read-only system partition too."""
+    session.sh(leftover_script(OLD_SESSION, OLD_APP) + '; ' + leftover_script(SESSION, APP), 'Removing an earlier session')
 
 
 def install(session, app, helper):
-    session.sh(f'mkdir -p {SESSION}', 'Preparing the session folder')
+    # 755: the app runs as mobile and must read its bundle; the helper trusts it only while
+    # nobody but root can change it.
+    session.sh(f'umask 022; mkdir -p {SESSION} && chmod 755 {SESSION}', 'Preparing the session folder')
     session.put_file(helper, HELPER, 0o755)
     session.put_tree(app, APP)
     session.sh(f'{HELPER} --register-app {APP}', 'Adding the app to the home screen')
@@ -138,7 +157,7 @@ def finish(session, helper_process):
         helper_process.wait(timeout=20)
     except subprocess.TimeoutExpired:
         helper_process.kill()
-    session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {APP} {SESSION}', 'Removing the app')
+    session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app')
 
 
 def checkra1n_command(executable, run=subprocess.run):
