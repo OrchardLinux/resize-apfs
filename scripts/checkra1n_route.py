@@ -92,8 +92,17 @@ class Session:
         for path in sorted(local.rglob('*')):
             require(not path.is_symlink(), f'The app must not contain links: {path}')
             if path.is_file():
-                mode = 0o755 if os.access(path, os.X_OK) else 0o644
+                mode = 0o755 if os.access(path, os.X_OK) or is_macho(path) else 0o644
                 self.put_file(path, remote + '/' + path.relative_to(local).as_posix(), mode)
+
+
+MACHO_MAGIC = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf'}
+
+
+def is_macho(path):
+    """Executables and libraries: a release ZIP built from CI artifacts loses execute bits."""
+    with open(path, 'rb') as stream:
+        return stream.read(4) in MACHO_MAGIC
 
 
 def remove_leftovers(session):

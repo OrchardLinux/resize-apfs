@@ -16,7 +16,7 @@ concurrency:
 jobs:
   app:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: write
     outputs:
@@ -62,10 +62,17 @@ jobs:
         run: swift test -j 2
       - name: Build device payload
         run: bash scripts/build-device.sh
+      - name: Build iOS 12-14 payload
+        run: bash scripts/build-device-ios12.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: device-payload
           path: out/device/
+          retention-days: 2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: device-payload-ios12
+          path: out/device-ios12/
           retention-days: 2
   linux-tools:
     needs: app
@@ -114,6 +121,10 @@ jobs:
         with:
           name: device-payload
           path: out/device
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: device-payload-ios12
+          path: out/device-ios12
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: linux-tools-x86_64

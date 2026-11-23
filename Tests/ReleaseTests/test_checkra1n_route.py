@@ -249,6 +249,13 @@ class SessionTests(unittest.TestCase):
         self.assertIn(b'helper', recorder.inputs)
         self.assertEqual(recorder.commands[-1], '/var/root/ResizeAPFS/session/resize-helper --register-app /Applications/ResizeAPFS.app')
 
+    def test_an_executable_without_its_execute_bit_is_still_installed_executable(self):
+        (self.app / 'ResizeAPFS').write_bytes(b'\xcf\xfa\xed\xfe' + b'\0' * 12)
+        (self.app / 'ResizeAPFS').chmod(0o644)
+        recorder = Recorder()
+        checkra1n_route.install(checkra1n_route.Session(self.work, run=recorder), self.app, self.helper)
+        self.assertIn('cat > /Applications/ResizeAPFS.app/ResizeAPFS && chmod 755', '\n'.join(recorder.commands))
+
     def test_a_failing_step_names_itself(self):
         session = checkra1n_route.Session(self.work, run=Recorder(failing=('--register-app',)))
         with self.assertRaisesRegex(ValueError, 'Adding the app to the home screen failed on the device: denied'):
