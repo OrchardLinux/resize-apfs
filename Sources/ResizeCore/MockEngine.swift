@@ -149,6 +149,9 @@ public actor MockEngine {
                 record.layout.revision = UUID()
                 op.observedCapacityBytes = record.layout.containerBytes
             case .expandPartition, .shrinkPartition:
+                // The GPT write that moves the boundary also removes the partitions
+                // approved for erasing, as the device worker's does.
+                if step == op.plan.removalStep { record.layout.partitions.removeAll { op.plan.request.replacing.contains($0.id) } }
                 let index = record.layout.partitions.firstIndex { $0.id == record.layout.backingPartitionID }!
                 record.layout.partitions[index].lastLBA = op.plan.after.apfs.lastLBA
                 record.layout.revision = UUID()

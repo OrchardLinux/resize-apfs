@@ -140,6 +140,21 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(result.operation?.status, .completed)
         XCTAssertEqual(result.layout.backingBytes, alignDown(28_000_000_000, to: 4096))
     }
+    func testGrowthOverTheErasedLinuxPartition() async throws {
+        let engine = try MockEngine(scenario: .linuxBlocked)
+        let snapshot = try await engine.snapshot(at: initial)
+        let linux = try XCTUnwrap(snapshot.layout.partitions.first { $0.kind == .linux })
+        var growable = snapshot.layout
+        growable.partitions.removeAll { $0.id == linux.id }
+        let plan = try await engine.plan(PlanRequest(revision: snapshot.layout.revision, requestedBytes: growable.maximumBytes,
+                                                     createLinux: false, replacing: [linux.id]))
+        _ = try await engine.start(StartRequest(planID: plan.id, requestID: UUID()), at: initial)
+        let result = try await finish(engine)
+        XCTAssertEqual(result.operation?.status, .completed, result.operation?.message ?? "")
+        XCTAssertFalse(result.layout.partitions.contains { $0.id == linux.id })
+        XCTAssertEqual(result.layout.containerBytes, plan.targetBytes)
+        try result.layout.validate()
+    }
     func testNoCapacityInterpolationAndHeartbeatIsRealObservation() async throws {
         let engine = try MockEngine(scenario: .longSilence, workerPID: 123)
         let before = try await begin(engine)
