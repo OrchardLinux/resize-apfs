@@ -114,8 +114,18 @@ final class LegendRow: UIStackView {
         super.init(frame: .zero)
         axis = .horizontal; spacing = 12; alignment = .firstBaseline
         addArrangedSubview(lead); addArrangedSubview(valueLabel)
+        // The value keeps its width; the title takes the rest and wraps.
+        // Without this the stack view may stretch the value instead and
+        // squeeze the title to one letter per line on 320 pt screens.
         valueLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        valueLabel.setContentHuggingPriority(.required, for: .horizontal)
+        lead.setContentHuggingPriority(.defaultLow, for: .horizontal)
         valueLabel.accessibilityIdentifier = valueIdentifier
+        // iOS 12 ignores the priorities above in some rows; the title keeps
+        // at least half the row whatever the stack view decides.
+        let half = lead.widthAnchor.constraint(greaterThanOrEqualTo: widthAnchor, multiplier: 0.5, constant: -6)
+        half.priority = UILayoutPriority(999)
+        half.isActive = true
         isAccessibilityElement = true
         accessibilityLabel = title.text
         accessibilityValue = value
@@ -390,7 +400,8 @@ func diskLegend(_ m: Metrics, _ layout: StorageLayout) -> UIView {
     if linux > 0 { items.append((Theme.linux, "Linux  \(Capacity.gb(linux))")) }
     if other > 0 { items.append((Theme.other, "Other partitions  \(Capacity.gb(other))")) }
     if layout.allUnallocatedBytes >= 50_000_000 { items.append((Theme.unallocated, "Unallocated  \(Capacity.gb(layout.allUnallocatedBytes))")) }
-    let perRow = m.regular ? 4 : 2
+    // One per line on the 320-pt iPod touch, where two would squeeze their labels.
+    let perRow = m.regular ? 4 : (m.narrow ? 1 : 2)
     let rows = stride(from: 0, to: items.count, by: perRow).map { start -> UIView in
         let row = stack(.horizontal, 16, items[start..<min(start + perRow, items.count)].map { item in
             stack(.horizontal, 7, [swatch(item.0, size: 8), label(item.1, Theme.font(m.caption), Theme.muted)], align: .center)
