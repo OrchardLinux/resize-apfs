@@ -86,15 +86,24 @@ final class ShrinkStepsTests: XCTestCase {
         XCTAssertThrowsError(try APFSSpaceMap(blockSize: 4096, blockCount: 50, chunks: [.init(firstBlock: 0, blockCount: 50, freeBlocks: 51)]))
     }
 
-    func testBudgetHalvesWhenSlowAndGrowsBackNoHigherThanTheStart() {
+    func testBudgetHalvesWhenSlowAndGrowsWithTheMeasuredSpeedUpToTheMaximum() {
         var budget = ShrinkSteps.startingBudget
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 31); XCTAssertEqual(budget, 512 * MiB)
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 20); XCTAssertEqual(budget, 512 * MiB)
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 94) }
         XCTAssertEqual(budget, ShrinkSteps.minimumBudget)
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB, "at most doubling")
+        // A call just under the fast limit grows only toward the target time: 9 s -> x15/9.
+        XCTAssertEqual(ShrinkSteps.adjustedBudget(GiB, afterCallSeconds: 9), Int64(Double(GiB) * 15 / 9) / MiB * MiB)
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 1) }
-        XCTAssertEqual(budget, ShrinkSteps.startingBudget)
+        XCTAssertEqual(budget, ShrinkSteps.maximumBudget, "fast storage is no longer held at the starting budget")
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 40); XCTAssertEqual(budget, 4 * GiB, "still halves after a slow call")
+    }
+
+    func testFallbackStepsScaleWithTheBudgetButStayWithinTheWatchdogProvenSize() {
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.startingBudget), 120 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: 2 * GiB), 112 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.maximumBudget), 112 * GiB)
     }
 
     func testEndsExactlyAtTheTargetWithAlignedIntermediateSteps() throws {

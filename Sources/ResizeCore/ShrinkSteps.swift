@@ -186,11 +186,21 @@ public struct APFSStepProgress: Codable, Equatable, Sendable {
 public enum ShrinkSteps {
     public static let startingBudget: Int64 = 1 << 30
     public static let minimumBudget: Int64 = 256 << 20
+    /// The most a step may move once calls have proven fast. Every step's fixed
+    /// cost (the rest, inspections, APFS's minimum) is the same whatever it
+    /// moves, so on fast storage fewer, larger steps finish sooner.
+    public static let maximumBudget: Int64 = 8 << 30
     /// Container bytes per step when the space map cannot be used, at the
-    /// starting budget; scaled down with the budget when calls are slow.
+    /// starting budget; scaled with the budget, up to `maximumFallbackStepBytes`.
     public static let fallbackStepBytes: Int64 = 8 << 30
+    /// 16 GB calls worked on the A9 iPhone 6s Plus where one 48 GB call ran into
+    /// the iOS watchdog (4ea2cf2); without a map nothing bounds the data moved.
+    public static let maximumFallbackStepBytes: Int64 = 16 << 30
     public static let slowCallSeconds: Double = 30
     public static let fastCallSeconds: Double = 10
+    /// What a growing budget aims a call at: well inside the fast range's
+    /// headroom to `slowCallSeconds`.
+    public static let targetCallSeconds: Double = 15
     /// Intermediate targets are whole MiB from the container start.
     public static let alignment: Int64 = 1 << 20
     /// A short rest between calls, so writes iOS queued during one call can
@@ -205,7 +215,7 @@ public enum ShrinkSteps {
         if let map, map.containerBytes == current {
             boundary = map.lowestBoundary(above: final, below: current, budget: budget)
         } else {
-            boundary = current - fallbackStepBytes / startingBudget * max(minimumBudget, budget)
+            boundary = current - min(maximumFallbackStepBytes, fallbackStepBytes / startingBudget * max(minimumBudget, budget))
         }
         // Rounding up moves the boundary toward `current`: less data, never more.
         boundary = alignUp(max(boundary, 0), to: alignment)
@@ -226,12 +236,15 @@ public enum ShrinkSteps {
         return steps
     }
 
-    /// Halves the budget after a slow call, grows it back after a fast one,
-    /// never below the floor or above the starting budget.
+    /// Halves the budget after a slow call. After a fast one it grows toward
+    /// what the measured speed would move in `targetCallSeconds`, at most
+    /// doubling per step: never below the floor or above `maximumBudget`.
     public static func adjustedBudget(_ budget: Int64, afterCallSeconds seconds: Double) -> Int64 {
         if seconds > slowCallSeconds { return max(minimumBudget, budget / 2) }
-        if seconds < fastCallSeconds { return min(startingBudget, budget * 2) }
-        return budget
+        guard seconds < fastCallSeconds else { return budget }
+        let factor = min(2, targetCallSeconds / max(seconds, 0.5))
+        let grown = alignDown(Int64(Double(budget) * factor), to: alignment)
+        return min(maximumBudget, max(budget, grown))
     }
 }
 
