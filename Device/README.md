@@ -165,8 +165,11 @@ is kept in Orchard's cache; a still-valid installed copy is not signed again. Wi
 user signs and installs it with a tool of their own. Signing happens only on the user's
 computer with their account; releases never contain a team-signed Dopamine.
 
-Dopamine's bootstrap (Procursus `bootstrap-ssh`, bundled in the app) installs OpenSSH under
-`/var/jb`, and Dopamine starts it with its other launch daemons after each jailbreak (port 22).
+Dopamine unpacks the Procursus bootstrap bundled in the app (`bootstrap_<version>.tar.zst`) on a
+device's first jailbreak, without checking it. Its own copy has no SSH server, so before signing,
+`sideload.py` replaces it with Procursus's `bootstrap-ssh` of the same version (pinned): the same
+files plus OpenSSH, which Dopamine starts with its other launch daemons after each jailbreak
+(port 22). A device already bootstrapped by another copy needs OpenSSH from Sileo or Zebra once.
 Root has no password there, so the session logs in as `mobile` (`alpine` unless changed in
 Dopamine's settings; the launcher asks for the password otherwise) and runs every command as
 root through `/var/jb/usr/bin/sudo -k -S`. sudo reads the password from the first input line,

@@ -65,9 +65,21 @@ PINS = {
 DOPAMINE = dict(url=DOPAMINE_RELEASE + '/Dopamine.ipa', size=55_422_988,
                 sha256='3664edd737cc672af5d9036d2d1513fb1d50784f0c0cfd49cc6e651b8c665e14', package='file',
                 member=None, executable_sha256=None)
+# Procursus's bootstrap with OpenSSH, for each bootstrap version Dopamine 3.0.13 bundles: the
+# same files as Dopamine's own copy plus OpenSSH (55 files). sideload.py swaps it in before
+# signing, so a device's first jailbreak brings the SSH server the session uses.
+BOOTSTRAP_SSH = {
+    version: dict(url=f'https://apt.procurs.us/bootstraps/{version}/bootstrap-ssh-iphoneos-arm64.tar.zst',
+                  size=size, sha256=sha256, package='file', member=None, executable_sha256=None)
+    for version, size, sha256 in (
+        ('1800', 21_889_605, '6592e54a1b4ef66d6a515f5bd29cf89e8f45c8e328443554ee596329ffbaf441'),
+        ('1900', 21_873_446, '2c639b83423e4365a3a849e2bc7c56671cdcc8da534d424b6b1779a27c0c7c08'))
+}
 for _system in ('macos', 'linux'):
     for _arch in ('arm64', 'x86_64'):
         PINS[('dopamine', _system, _arch)] = DOPAMINE
+        for _version, _pin in BOOTSTRAP_SSH.items():
+            PINS[('bootstrap-ssh-' + _version, _system, _arch)] = _pin
 PINS[('palera1n', 'macos', 'x86_64')] = PINS[('palera1n', 'macos', 'arm64')]
 PINS[('checkra1n', 'macos', 'x86_64')] = PINS[('checkra1n', 'macos', 'arm64')]
 
@@ -172,7 +184,7 @@ def provide(tool, root=None, fetch=None):
 
     `PALERA1N` / `CHECKRA1N` / `DOPAMINE` point to a developer's own build instead and skip the download.
     """
-    override = os.environ.get(OVERRIDES[tool])
+    override = os.environ.get(OVERRIDES[tool]) if tool in OVERRIDES else None
     if override:
         path = pathlib.Path(shutil.which(override) or override)
         require(path.is_file(), f'{OVERRIDES[tool]} does not point to a file: {override}')

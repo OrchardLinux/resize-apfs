@@ -37,7 +37,8 @@ PATH = ':'.join([JBROOT + p for p in ('/usr/bin', '/bin', '/usr/sbin', '/sbin')]
                 ['/usr/bin', '/bin', '/usr/sbin', '/sbin'])
 SERVER = "Dopamine's SSH server"
 HINT = (SERVER + ' did not answer: {}. Unlock the device and open Dopamine: if it offers Jailbreak, '
-        'tap it and run this again.')
+        'tap it and run this again. A device first jailbroken with another copy of Dopamine has no SSH '
+        'server: install OpenSSH from Sileo or Zebra once.')
 
 DEVELOPER_MODE = ('Turn on Developer Mode on the device: Settings > Privacy & Security > Developer Mode, '
                   'then restart it and confirm "Turn On".\n'

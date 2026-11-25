@@ -14,6 +14,7 @@ Releases never contain anything team-signed: signing happens on the user's compu
 the user's account, for the user's device.
 """
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -31,11 +32,9 @@ from image_format import require
 MACHO_MAGIC = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf'}
 STUB = 'DopamineSigning'
 MARGIN = datetime.timedelta(days=1)
-# iOS checks a developer certificate with Apple once, online, before the first app it signed
-# opens; until then the app refuses to start with "Untrusted Developer".
-VERIFY = ('Before opening Dopamine the first time: connect the device to Wi-Fi, then on the device go to '
-          'Settings > General > VPN & Device Management, open your Apple ID and tap Verify App. '
-          'iOS checks the signature with Apple once; afterwards Dopamine opens offline too.')
+# iOS opens an app signed by a new developer only after the user trusts that developer once.
+VERIFY = ('Before opening Dopamine the first time, trust your Apple ID on the device: Settings > General > '
+          'VPN & Device Management, open your Apple ID and confirm.')
 
 
 def available(run=subprocess.run):
@@ -205,8 +204,25 @@ def sign_order(app):
     return sorted(loose, key=by_depth) + sorted(bundles, key=by_depth)
 
 
-def resign(ipa, work, identifier, profile, entitlements, sha1, run=subprocess.run):
-    """Dopamine.app from `ipa`, under `identifier`, signed with the profile and identity."""
+def bootstraps(provide=tools.provide):
+    """{version: path} of the pinned Procursus bootstraps with OpenSSH."""
+    return {version: provide('bootstrap-ssh-' + version) for version in tools.BOOTSTRAP_SSH}
+
+
+def swap_bootstraps(app, replacements):
+    """Replace Dopamine's bundled bootstraps (bootstrap_<version>.tar.zst, unpacked on a device's
+    first jailbreak) with the ones that also hold OpenSSH."""
+    bundled = sorted(app.glob('bootstrap_*.tar.zst'))
+    require(bundled, 'This Dopamine bundles no bootstrap.')
+    for path in bundled:
+        version = path.name[len('bootstrap_'):-len('.tar.zst')]
+        require(version in replacements, f'No bootstrap with OpenSSH is pinned for version {version}.')
+        shutil.copyfile(replacements[version], path)
+
+
+def resign(ipa, work, identifier, profile, entitlements, sha1, run=subprocess.run, replacements=None):
+    """Dopamine.app from `ipa`, under `identifier`, with `replacements` for its bootstraps,
+    signed with the profile and identity."""
     work = pathlib.Path(work)
     with zipfile.ZipFile(ipa) as archive:
         for name in archive.namelist():
@@ -219,6 +235,8 @@ def resign(ipa, work, identifier, profile, entitlements, sha1, run=subprocess.ru
     info = plistlib.loads((app / 'Info.plist').read_bytes())
     info['CFBundleIdentifier'] = identifier
     (app / 'Info.plist').write_bytes(plistlib.dumps(info))
+    if replacements:
+        swap_bootstraps(app, replacements)
     shutil.copyfile(profile, app / 'embedded.mobileprovision')
     (work / 'entitlements.plist').write_bytes(entitlements)
     sign = ['codesign', '--force', '--sign', sha1, '--timestamp=none', '--generate-entitlement-der']
@@ -277,13 +295,16 @@ def still_signed(identifier, ipa_sha256, udid, now=None, root=None, run=subproce
     return expires if installed(udid, identifier, run) else None
 
 
-def install(ipa, udid, ask=input, run=subprocess.run, root=None):
+def install(ipa, udid, ask=input, run=subprocess.run, root=None, replacements=None):
     """Sign `ipa` with Xcode's account and install it on `udid` after one confirmation, unless
-    a signed copy is still installed."""
+    a signed copy is still installed. `replacements`: the bootstraps with OpenSSH."""
+    replacements = bootstraps() if replacements is None else replacements
     found = teams(run)
     team, name, free = choose_team(found, ask)
     identifier = bundle_id(team)
-    ipa_sha256 = tools.sha256_file(ipa)
+    # The installed copy is kept only when it was made from the same IPA and bootstraps.
+    ipa_sha256 = hashlib.sha256(' '.join([tools.sha256_file(ipa)] + [tools.sha256_file(replacements[v])
+                                for v in sorted(replacements)]).encode()).hexdigest()
     expires = still_signed(identifier, ipa_sha256, udid, root=root, run=run)
     if expires:
         print(f'Dopamine is installed and signed until {expires:%d %b %Y}.')
@@ -294,7 +315,7 @@ def install(ipa, udid, ask=input, run=subprocess.run, root=None):
         print('Making a signing profile with Xcode...', flush=True)
         profile, entitlements, sha1 = provision(pathlib.Path(work) / 'profile', team, udid, run)
         when = expiry(profile, run)
-        app = resign(ipa, pathlib.Path(work) / 'app', identifier, profile, entitlements, sha1, run)
+        app = resign(ipa, pathlib.Path(work) / 'app', identifier, profile, entitlements, sha1, run, replacements)
         print('Installing Dopamine...', flush=True)
         result = run(['xcrun', 'devicectl', 'device', 'install', 'app', '--device', udid, str(app)],
                      capture_output=True, text=True, timeout=600)

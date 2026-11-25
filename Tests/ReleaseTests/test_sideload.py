@@ -73,6 +73,34 @@ class SignOrderTests(unittest.TestCase):
         self.assertEqual(order, ['libjailbreak.dylib', 'Frameworks/kfd.framework'])
 
 
+class BootstrapTests(unittest.TestCase):
+    def test_each_bundled_bootstrap_is_replaced_by_its_ssh_variant(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = pathlib.Path(folder)
+            app = folder / 'Dopamine.app'
+            app.mkdir()
+            (app / 'bootstrap_1800.tar.zst').write_bytes(b'plain 1800')
+            (app / 'bootstrap_1900.tar.zst').write_bytes(b'plain 1900')
+            for v in ('1800', '1900'):
+                (folder / v).write_bytes(b'ssh ' + v.encode())
+            sideload.swap_bootstraps(app, {v: folder / v for v in ('1800', '1900')})
+            self.assertEqual((app / 'bootstrap_1800.tar.zst').read_bytes(), b'ssh 1800')
+            self.assertEqual((app / 'bootstrap_1900.tar.zst').read_bytes(), b'ssh 1900')
+
+    def test_an_unpinned_bootstrap_version_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = pathlib.Path(folder)
+            (app / 'bootstrap_2000.tar.zst').write_bytes(b'x')
+            with self.assertRaisesRegex(ValueError, 'version 2000'):
+                sideload.swap_bootstraps(app, {})
+
+    def test_both_bundled_versions_are_pinned(self):
+        import tools
+        self.assertEqual(sorted(tools.BOOTSTRAP_SSH), ['1800', '1900'])
+        for version, pin in tools.BOOTSTRAP_SSH.items():
+            self.assertIn(f'/bootstraps/{version}/bootstrap-ssh-iphoneos-arm64.tar.zst', pin['url'])
+
+
 class StillSignedTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
