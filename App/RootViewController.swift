@@ -101,6 +101,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             footer.widthAnchor.constraint(lessThanOrEqualToConstant: metrics.contentWidth), footerWidth, footerCap,
         ])
         model.onChange = { [weak self] in self?.render() }
+        model.onPreview = { [weak self] in self?.renderFooter() }
         NotificationCenter.default.addObserver(self, selector: #selector(keyboard(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboard(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         render()
@@ -132,7 +133,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
 
     /// Operation pages share one identity so progress and reconnecting keep their scroll position.
     private var identity: String {
-        if [.submitting, .running, .verifying].contains(model.state) || (model.state == .reconnecting && model.operation != nil) { return "operation" }
+        if model.showsProgress { return "operation" }
         return model.state.rawValue
     }
 
@@ -151,6 +152,9 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
     func render() {
         guard isViewLoaded else { return }
         let m = metrics
+        // The screen stays on while the progress page is up: a device that goes to
+        // sleep holds up the resize (four long stalls in an iPhone XR's shrink).
+        UIApplication.shared.isIdleTimerDisabled = model.showsProgress
         // The page as it looks now, to animate away from when the state changes.
         let leaving = identity != pageIdentity && !pageIdentity.isEmpty && view.window != nil
         let previous = pageIdentity
@@ -174,18 +178,26 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             for view in Pages(self, m).build() { page.addArrangedSubview(view) }
         }
         pageKey = keys.page
-        if changedPage || keys.footer != footerKey {
-            footer.arrangedSubviews.forEach { $0.removeFromSuperview() }
-            for view in Pages(self, m).footer() { footer.addArrangedSubview(view) }
-            footerBar.isHidden = footer.arrangedSubviews.isEmpty
-            footerKey = keys.footer
-        }
+        renderFooter(keys.footer, force: changedPage)
         if changedPage { scroll.layoutIfNeeded(); scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false) }
         if let snapshot { transition(from: snapshot, previous: previous) }
         let ticking = identity == "operation"
         if ticking && ticker == nil {
             ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.render() }
         } else if !ticking { ticker?.invalidate(); ticker = nil }
+    }
+
+    /// Rebuilds the footer when what it shows changed: on every render, and while
+    /// the bar is dragged, so the Review button enables as soon as the size is valid
+    /// rather than when the finger lifts (at most once per change of its state).
+    func renderFooter(_ key: String? = nil, force: Bool = false) {
+        guard isViewLoaded else { return }
+        let key = key ?? renderKeys().footer
+        guard force || key != footerKey else { return }
+        footer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in Pages(self, metrics).footer() { footer.addArrangedSubview(view) }
+        footerBar.isHidden = footer.arrangedSubviews.isEmpty
+        footerKey = key
     }
 
     /// Everything the page and footer are built from, except the snapshot's
@@ -195,7 +207,8 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         let editing = [model.targetText, model.freeText, model.targetBytes.map(String.init) ?? "-", "\(model.createLinux)", "\(model.eraseFollowing)", model.reviewedPlan?.id.uuidString ?? "-"]
         let page = ([model.state.rawValue, model.error ?? "-", "\(model.busy)", "\(model.connectionOK)", model.connectionMessage ?? "-", encoded] + editing).joined(separator: "|")
         let footer = [model.state.rawValue, model.error ?? "-", "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
-                      model.operation?.status.rawValue ?? "-"].joined(separator: "|")
+                      model.operation?.status.rawValue ?? "-", model.operation?.currentStep?.rawValue ?? "-",
+                      "\(model.operation?.onLastShrinkStep == true)", "\(model.operation?.stopRequested == true)"].joined(separator: "|")
         return (page, footer)
     }
 
@@ -247,6 +260,12 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             ? "Apply the changes you reviewed? This simulator build changes mock storage only."
             : "Apply these changes to internal storage? Keep power connected and do not restart until the result is verified."
         present(DialogController(title: "Start resizing?", message: message, action: "Start resize") { [weak self] in self?.model.apply() }, animated: true)
+    }
+    func confirmStop() {
+        guard let operation = model.operation, operation.canStop else { return }
+        present(DialogController(title: "Stop resizing?",
+                                 message: "The current step finishes first. APFS keeps the size it has then and the partition stays \(Capacity.gb(operation.plan.before.backingBytes)). You can continue or grow APFS back later.",
+                                 action: "Stop", cancel: "Keep resizing") { [weak self] in self?.model.stop() }, animated: true)
     }
     func confirmRemoveSnapshot() {
         guard let name = model.layout?.systemSnapshot?.name else { return }

@@ -64,6 +64,12 @@ final class LocalHelperTests: XCTestCase {
         XCTAssertEqual(latest.operation?.status, .completed, latest.operation?.message ?? "No completion")
         XCTAssertEqual(latest.layout.backingBytes, fixture.containerBytes)
         XCTAssertTrue(latest.layout.partitions.contains { $0.kind == .linux })
+        // The helper closes a connection idle for four seconds, as the app's is while
+        // it is in the background. Coming back must not begin with a failed request.
+        reconnected.disconnect()
+        try await Task.sleep(nanoseconds: 5_000_000_000)
+        let resumed = try await reconnected.snapshot()
+        XCTAssertEqual(resumed.operation?.id, accepted.operation?.id)
         let after = try DeviceInspector.inspect(fixture.source)
         XCTAssertEqual(after.layout.containerBytes, fixture.containerBytes)
         XCTAssertEqual(after.layout.backingBytes, fixture.containerBytes)

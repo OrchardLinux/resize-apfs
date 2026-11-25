@@ -247,20 +247,73 @@ final class OptionRow: UIControl {
 }
 
 /// The bottom action button: blue with dark text, or a quiet disabled box.
+/// iOS's own spinner, turning on one clock shared by every spinner. Pages are
+/// rebuilt while an operation runs (every second), and each rebuild creates new
+/// spinners: on their own, they would start their turn over every time.
+final class ClockedSpinner: UIActivityIndicatorView {
+    /// The shared clock's zero, in CACurrentMediaTime.
+    private static let epoch = CACurrentMediaTime()
+
+    init(style: UIActivityIndicatorView.Style, color: UIColor) {
+        super.init(style: style)
+        self.color = color
+        startAnimating()
+    }
+    required init(coder: NSCoder) { fatalError() }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { align(tries: 10) }
+    }
+
+    // Layout runs before the frame is drawn: aligned here, a new spinner is
+    // never shown at the start of its own turn.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        align(tries: 0)
+    }
+
+    /// UIKit adds the turning animation to its own sublayers some time after the
+    /// spinner reaches the screen. Each is replaced by the same animation begun
+    /// at the shared clock's zero, so it shows the turn every other spinner is at.
+    private func align(tries: Int) {
+        guard window != nil else { return }
+        if !Self.align(layer), tries > 0 {
+            DispatchQueue.main.async { [weak self] in self?.align(tries: tries - 1) }
+        }
+    }
+
+    /// True when the layer tree has an animation (now aligned).
+    private static func align(_ layer: CALayer) -> Bool {
+        var found = false
+        for key in layer.animationKeys() ?? [] {
+            guard let animation = layer.animation(forKey: key) else { continue }
+            found = true
+            let begin = layer.convertTime(epoch, from: nil)
+            guard abs(animation.beginTime - begin) > 0.000_1, let copy = animation.copy() as? CAAnimation else { continue }
+            copy.beginTime = begin
+            layer.add(copy, forKey: key)
+        }
+        for sublayer in layer.sublayers ?? [] where align(sublayer) { found = true }
+        return found
+    }
+}
+
 final class ActionButton: UIControl {
     enum Arrow { case none, leading, trailing }
+    /// `quiet`: an outlined box for an action that is there but not the next step.
+    enum Style { case primary, quiet }
     private let action: () -> Void
-    init(title: String, identifier: String, arrow: Arrow = .none, disabled: Bool = false, busy: Bool = false, action: @escaping () -> Void) {
+    init(title: String, identifier: String, arrow: Arrow = .none, style: Style = .primary, disabled: Bool = false, busy: Bool = false, action: @escaping () -> Void) {
         self.action = action
         super.init(frame: .zero)
         let enabled = !disabled && !busy
-        backgroundColor = disabled ? Theme.disabledFill : Theme.blue
-        let tint = disabled ? Theme.faint : Theme.onAccent
+        backgroundColor = disabled ? Theme.disabledFill : style == .quiet ? .clear : Theme.blue
+        let tint = disabled ? Theme.faint : style == .quiet ? Theme.ink : Theme.onAccent
+        if style == .quiet && !disabled { layer.borderWidth = 1; layer.borderColor = Theme.quietBorder.cgColor }
         let row = stack(.horizontal, 8, [], align: .center)
         if busy {
-            let spinner = UIActivityIndicatorView(style: .white)
-            spinner.color = Theme.onAccent
-            spinner.startAnimating(); row.addArrangedSubview(spinner)
+            row.addArrangedSubview(ClockedSpinner(style: .white, color: tint))
         } else if arrow == .leading { row.addArrangedSubview(Icon.arrowRight.view(16, color: tint)) }
         row.addArrangedSubview(label(title, Theme.font(14, .semibold, .headline), tint, lines: 1))
         if !busy && arrow == .trailing { row.addArrangedSubview(Icon.arrowRight.view(16, color: tint)) }
@@ -322,10 +375,10 @@ final class WarningBox: UIView {
 /// The square badge above a status page: a tinted box with a border holding a
 /// spinner (radial bars, iOS's own) or a symbol.
 final class StatusBadge: UIView {
-    enum Kind { case working, success, failure }
+    enum Kind { case working, success, stopped, failure }
     init(_ kind: Kind, size: CGFloat = 64) {
         super.init(frame: .zero)
-        let (fill, border): (UIColor, UIColor) = kind == .working ? (Theme.blueTint, Theme.blueBorder)
+        let (fill, border): (UIColor, UIColor) = kind == .working || kind == .stopped ? (Theme.blueTint, Theme.blueBorder)
             : kind == .success ? (Theme.greenTint, Theme.greenBorder) : (Theme.destructiveTint, Theme.destructiveBorder)
         backgroundColor = fill
         layer.borderWidth = 1; layer.borderColor = border.cgColor
@@ -334,11 +387,11 @@ final class StatusBadge: UIView {
         let inner: UIView
         switch kind {
         case .working:
-            let spinner = UIActivityIndicatorView(style: size >= 60 ? .whiteLarge : .white)
-            spinner.color = Theme.blue; spinner.startAnimating()
+            let spinner = ClockedSpinner(style: size >= 60 ? .whiteLarge : .white, color: Theme.blue)
             spinner.translatesAutoresizingMaskIntoConstraints = false
             inner = spinner
         case .success: inner = Icon.check.view(size * 0.4, color: Theme.green, lineWidth: 2.4)
+        case .stopped: inner = Icon.circleStop.view(size * 0.5, color: Theme.blue)
         case .failure: inner = Icon.warning.view(size * 0.4, color: Theme.destructive, lineWidth: 2.2)
         }
         addSubview(inner)
@@ -346,6 +399,66 @@ final class StatusBadge: UIView {
         isAccessibilityElement = false
     }
     required init?(coder: NSCoder) { fatalError() }
+}
+
+/// How far a stepwise shrink is: what verified steps released, the running step's
+/// part lighter. It moves only when a step was verified, never with time.
+final class ShrinkProgressView: UIView {
+    init(_ metrics: Metrics, _ progress: ShrinkProgress, step: APFSStepProgress?, last: Bool) {
+        super.init(frame: .zero)
+        let size = metrics.row + 1
+        // "2.4 of 7.6 GB released": the unit once.
+        let released = Capacity.gb(progress.releasedBytes).replacingOccurrences(of: " GB", with: "")
+        let amount = label("\(released) of \(Capacity.gb(progress.totalBytes)) released", Theme.font(size, .semibold), Theme.ink)
+        let percent = label("\(progress.percent)%", Theme.font(size, .semibold), Theme.blue, lines: 1, align: .right)
+        percent.setContentHuggingPriority(.required, for: .horizontal)
+        percent.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let column = stack(.vertical, 10, [stack(.horizontal, 12, [amount, percent], align: .firstBaseline),
+                                           Self.bar(progress)])
+        var spoken = "\(progress.percent) percent, \(amount.text ?? "")"
+        if let step {
+            let planned = max(step.number, step.plannedCount)
+            let text = last ? "Last step, \(step.number) of \(step.number)" : "Step \(step.number) of about \(planned)"
+            let number = label(text, Theme.font(metrics.row), Theme.muted)
+            let row = stack(.horizontal, 12, [number], align: .firstBaseline)
+            spoken += ". " + text
+            if let seconds = step.previousCallSeconds {
+                let previous = label("Previous step: \(max(1, Int(seconds.rounded()))) s", Theme.font(metrics.row), Theme.muted, lines: 1, align: .right)
+                previous.setContentHuggingPriority(.required, for: .horizontal)
+                previous.setContentCompressionResistancePriority(.required, for: .horizontal)
+                row.addArrangedSubview(previous)
+            }
+            column.addArrangedSubview(row)
+        }
+        embed(column, in: self, .zero)
+        isAccessibilityElement = true
+        accessibilityIdentifier = "shrinkProgress"
+        accessibilityLabel = "Progress"
+        accessibilityValue = spoken
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private static func bar(_ progress: ShrinkProgress) -> UIView {
+        let track = UIView()
+        track.backgroundColor = Theme.track
+        track.clipsToBounds = true
+        track.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        let total = CGFloat(max(1, progress.totalBytes))
+        var edge = track.leadingAnchor
+        for (bytes, color) in [(progress.releasedBytes, Theme.blue), (progress.stepBytes, Theme.stepRunning)] where bytes > 0 {
+            let part = UIView()
+            part.backgroundColor = color
+            part.translatesAutoresizingMaskIntoConstraints = false
+            track.addSubview(part)
+            NSLayoutConstraint.activate([
+                part.leadingAnchor.constraint(equalTo: edge),
+                part.topAnchor.constraint(equalTo: track.topAnchor), part.bottomAnchor.constraint(equalTo: track.bottomAnchor),
+                part.widthAnchor.constraint(equalTo: track.widthAnchor, multiplier: CGFloat(bytes) / total),
+            ])
+            edge = part.trailingAnchor
+        }
+        return track
+    }
 }
 
 /// Red message under a field.

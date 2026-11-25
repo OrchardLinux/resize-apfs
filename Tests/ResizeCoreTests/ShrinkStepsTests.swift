@@ -86,15 +86,39 @@ final class ShrinkStepsTests: XCTestCase {
         XCTAssertThrowsError(try APFSSpaceMap(blockSize: 4096, blockCount: 50, chunks: [.init(firstBlock: 0, blockCount: 50, freeBlocks: 51)]))
     }
 
-    func testBudgetHalvesWhenSlowAndGrowsBackNoHigherThanTheStart() {
+    func testBudgetHalvesWhenSlowAndGrowsWithTheMeasuredSpeedUpToTheMaximum() {
         var budget = ShrinkSteps.startingBudget
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 31); XCTAssertEqual(budget, 512 * MiB)
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 20); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 61); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 40); XCTAssertEqual(budget, 512 * MiB)
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 94) }
         XCTAssertEqual(budget, ShrinkSteps.minimumBudget)
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB, "at most doubling")
+        // A call just under the fast limit grows only toward the target time: 29 s (the XR's) -> x40/29.
+        XCTAssertEqual(ShrinkSteps.adjustedBudget(512 * MiB, afterCallSeconds: 29), Int64(Double(512 * MiB) * 40 / 29) / MiB * MiB)
+        XCTAssertEqual(ShrinkSteps.adjustedBudget(GiB, afterCallSeconds: 45), GiB, "between the limits the budget stays")
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 1) }
-        XCTAssertEqual(budget, ShrinkSteps.startingBudget)
+        XCTAssertEqual(budget, ShrinkSteps.maximumBudget, "fast storage is no longer held at the starting budget")
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 65); XCTAssertEqual(budget, 4 * GiB, "still halves after a slow call")
+    }
+
+    func testAnUnalignedTargetGetsNoExtraStepForItsRemainder() throws {
+        // The rest fits the budget: one step straight to the target, not one to the MiB above it.
+        let final: Int64 = 31_000_000_000
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 32 * GiB, to: final, map: nil, budget: ShrinkSteps.startingBudget), final)
+        XCTAssertEqual(ShrinkSteps.count(from: 32 * GiB, to: final, map: nil, budget: ShrinkSteps.startingBudget), 1)
+        let space = try XCTUnwrap(APFSSpaceMap.uniform(containerBytes: 32 * GiB, allocatedBytes: 4 * GiB))
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 32 * GiB, to: final, map: space, budget: ShrinkSteps.maximumBudget), final)
+        // A boundary less than one MiB above the target folds the remainder in.
+        let other: Int64 = 20 * GiB + 300_000
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: other + 8 * GiB + 524_288, to: other, map: nil, budget: ShrinkSteps.startingBudget), other)
+        // A larger remainder still gets its own step.
+        XCTAssertGreaterThan(ShrinkSteps.nextTarget(from: other + 8 * GiB + 3 * MiB, to: other, map: nil, budget: ShrinkSteps.startingBudget), other)
+    }
+
+    func testFallbackStepsScaleWithTheBudgetButStayWithinTheWatchdogProvenSize() {
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.startingBudget), 120 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: 2 * GiB), 112 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.maximumBudget), 112 * GiB)
     }
 
     func testEndsExactlyAtTheTargetWithAlignedIntermediateSteps() throws {

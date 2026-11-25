@@ -116,7 +116,7 @@ struct Pages {
         case .review: views += review()
         case .submitting, .running, .verifying: views += progress()
         case .completed, .stopped: views += result()
-        case .reconnecting: views += model.operation != nil ? progress() : connection()
+        case .reconnecting: views += model.showsProgress ? progress() : connection()
         }
         return views
     }
@@ -365,14 +365,21 @@ struct Pages {
     private func progress() -> [UIView] {
         let op = model.operation
         let reconnecting = model.state == .reconnecting
-        let heading = label(reconnecting ? "Checking operation status" : (op?.currentStep?.title ?? "Starting operation"),
+        let shrink = op?.shrinkProgress
+        let stopping = op?.stopRequested == true && op?.currentStep == .shrinkAPFS
+        let heading = label(reconnecting ? "Checking operation status" : stopping ? "Stopping after this step"
+                                : (op?.currentStep?.title ?? "Starting operation"),
                             Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityIdentifier = "operationHeading"
-        let top = statusHeading(StatusBadge(.working, size: m.regular ? 68 : 64), heading, [
-            "Internal storage · \(model.layout?.apfs.bsdName ?? "disk0")",
-            op?.currentStep?.isResize == true ? "This may take many minutes." : "Checking the requested storage changes.",
-        ])
-        var views: [UIView] = [top]
+        var lines = ["Internal storage · \(model.layout?.apfs.bsdName ?? "disk0")"]
+        // A shrink shows its progress instead.
+        if shrink == nil {
+            lines.append(op?.currentStep?.isResize == true ? "This may take many minutes." : "Checking the requested storage changes.")
+        }
+        var views: [UIView] = [statusHeading(StatusBadge(.working, size: m.regular ? 68 : 64), heading, lines)]
+        if let op, let shrink {
+            views.append(ShrinkProgressView(m, shrink, step: op.apfsStep, last: op.onLastShrinkStep))
+        }
         if let op {
             views.append(ListCard(m, op.plan.steps.enumerated().map { index, step in stepRow(op, index, step, reconnecting) }))
         } else {
@@ -380,7 +387,7 @@ struct Pages {
         }
         views.append(WarningBox(m, icon: .plug, title: "Keep power connected", paragraphs: [
             "The device may freeze, respond again, or appear idle while work continues. This does not mean resizing has finished or failed.",
-            "Do not restart the device or start another resize. Wait until Resize APFS verifies completion.",
+            "Do not restart the device or start another resize. Wait until Resize APFS confirms that it has finished or stopped.",
         ]))
         return views
     }
@@ -390,15 +397,14 @@ struct Pages {
         let status: UIView
         if op.completedSteps.contains(step) { status = Icon.checkCircle.view(18, color: Theme.green) }
         else if current {
-            let spinner = UIActivityIndicatorView(style: .white)
-            spinner.color = Theme.blue; spinner.startAnimating()
+            let spinner = ClockedSpinner(style: .white, color: Theme.blue)
             spinner.widthAnchor.constraint(equalToConstant: 18).isActive = true
             status = spinner
         } else { status = Icon.circle.view(18, color: Theme.faint) }
         let name = label(step.title, Theme.font(m.row + 1, current ? .semibold : .regular), current ? Theme.blue : (op.completedSteps.contains(step) ? Theme.ink : Theme.muted), lines: 1)
         let row = stack(.horizontal, 12, [status, name, spacer()], align: .center)
         if current {
-            let chip = label(reconnecting ? "Waiting" : "In progress", Theme.font(m.caption - 1, .semibold), Theme.blue, lines: 1)
+            let chip = label(reconnecting ? "Waiting" : step == .shrinkAPFS && op.stopRequested == true ? "Stopping" : "In progress", Theme.font(m.caption - 1, .semibold), Theme.blue, lines: 1)
             row.addArrangedSubview(chip)
         }
         guard current && step.isResize else { return row }
@@ -416,8 +422,7 @@ struct Pages {
         ]
         if step == .shrinkAPFS, let apfsStep = op.apfsStep {
             // A large shrink runs as several APFS calls, so iOS stays responsive between them.
-            rows.insert(LegendRow(m, swatch: nil, title: "Step", value: "\(apfsStep.number) of \(max(apfsStep.number, apfsStep.plannedCount))", valueIdentifier: "apfsStep"), at: 2)
-            rows.append(LegendRow(m, swatch: nil, title: "Step target", value: Capacity.gb(apfsStep.targetBytes), indent: true))
+            rows.insert(LegendRow(m, swatch: nil, title: "This step", value: Capacity.gb(apfsStep.targetBytes), indent: true), at: rows.count - 1)
         }
         if let observedAt = op.observedAt {
             rows.append(caption("Capacity observation \(Int(max(0, now.timeIntervalSince(observedAt)))) seconds ago."))
@@ -441,10 +446,11 @@ struct Pages {
         guard let op = model.operation, let layout = model.layout else { return [] }
         let success = op.status == .completed
         let unknown = op.status == .unknown
-        let heading = label(success ? "Completed" : unknown ? "Couldn’t verify the result" : "Changes could not be completed",
+        let byUser = op.status == .stopped && op.stoppedByUser == true
+        let heading = label(success ? "Completed" : byUser ? "Resizing stopped" : unknown ? "Couldn’t verify the result" : "Changes could not be completed",
                             Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityIdentifier = success ? "operationCompleted" : "operationStopped"
-        let top = statusHeading(StatusBadge(success ? .success : .failure, size: 52), heading,
+        let top = statusHeading(StatusBadge(success ? .success : byUser ? .stopped : .failure, size: 52), heading,
                                 [op.message ?? "Inspect the operation status before continuing."])
         var rows: [UIView] = [PartitionBar(m, layout: layout, labels: false)]
         if layout.containerBytes == layout.backingBytes {
@@ -464,7 +470,18 @@ struct Pages {
         // Each verified step, and, when the operation stopped, the step that failed
         // in its place, so a failure never reads as a list of successes.
         var notes: [UIView] = []
-        for (index, step) in op.plan.steps.enumerated() {
+        func note(_ icon: Icon, _ color: UIColor, _ text: String, _ ink: UIColor = Theme.ink) -> UIView {
+            stack(.horizontal, 9, [icon.view(16, color: color), label(text, Theme.font(m.row), ink)], align: .center)
+        }
+        if byUser {
+            if layout.containerBytes < op.plan.before.containerBytes {
+                notes.append(note(.checkCircle, Theme.green, "APFS resized to \(Capacity.gb(layout.containerBytes)) and verified"))
+            }
+            notes += [note(.circleStop, Theme.blue, "Shrinking to \(Capacity.gb(op.plan.targetBytes)) stopped", Theme.blue),
+                      note(.checkCircle, Theme.green, "Partition table unchanged"),
+                      note(.checkCircle, Theme.green, "Current storage state verified")]
+        }
+        for (index, step) in op.plan.steps.enumerated() where !byUser {
             if op.completedSteps.contains(step) {
                 let text: String
                 switch step {
@@ -525,7 +542,22 @@ struct Pages {
             if model.operation?.status == .unknown {
                 return [ActionButton(title: "Check status", identifier: "checkStatus") { [model] in model.refresh() }]
             }
-            return [ActionButton(title: "Back to storage", identifier: "backToStorage") { [model] in model.done() }]
+            let back = ActionButton(title: "Back to storage", identifier: "backToStorage") { [model] in model.done() }
+            if model.operation?.stoppedByUser == true, let layout = model.layout, layout.containerBytes < layout.backingBytes {
+                return [label("Adjust the size to continue, keep \(Capacity.gb(layout.containerBytes)) or grow APFS back.",
+                              Theme.font(m.caption), Theme.muted, align: .center), back]
+            }
+            return [back]
+        case .running:
+            guard let op = model.operation, op.currentStep == .shrinkAPFS else { return [] }
+            if op.stopRequested == true {
+                return [ActionButton(title: "Stopping…", identifier: "stopping", disabled: true) {}]
+            }
+            if op.onLastShrinkStep {
+                return [ActionButton(title: "The last step can’t be stopped", identifier: "lastStep", disabled: true) {}]
+            }
+            return [ActionButton(title: "Stop after this step", identifier: "stopAfterStep", style: .quiet,
+                                 busy: model.busy) { [weak root] in root?.confirmStop() }]
         case .reconnecting:
             return [label("Reconnecting. No resize request will be repeated.", Theme.font(m.caption), Theme.muted, align: .center)]
         default: return []

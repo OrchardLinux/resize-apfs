@@ -144,6 +144,42 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertFalse(app.buttons["takeSnapshot"].exists)
     }
 
+    /// Stop after this step: the running step ends, the result is neutral, and the
+    /// storage page offers another size.
+    func testStoppingAShrinkAfterTheRunningStep() throws {
+        try reset("normal", scale: 1)
+        let app = XCUIApplication()
+        openEditor(app)
+        enterSize("24", app: app)
+        apply(app)
+        let stop = app.buttons["stopAfterStep"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["shrinkProgress"].waitForExistence(timeout: 5))
+        let running = XCTAttachment(screenshot: app.screenshot())
+        running.name = "Shrinking with progress"; running.lifetime = .keepAlways; add(running)
+        stop.tap()
+        XCTAssertTrue(app.buttons["Keep resizing"].waitForExistence(timeout: 3))
+        app.buttons["Keep resizing"].tap()
+        XCTAssertTrue(stop.waitForExistence(timeout: 5), "keeping on changes nothing")
+        XCTAssertNil((try snapshotJSON()["operation"] as? [String: Any])?["stopRequested"])
+        stop.tap()
+        XCTAssertTrue(app.buttons["Stop"].waitForExistence(timeout: 3))
+        let dialog = XCTAttachment(screenshot: app.screenshot())
+        dialog.name = "Stop confirmation"; dialog.lifetime = .keepAlways; add(dialog)
+        app.buttons["Stop"].tap()
+        XCTAssertTrue(app.buttons["stopping"].waitForExistence(timeout: 5))
+        let stopping = XCTAttachment(screenshot: app.screenshot())
+        stopping.name = "Stopping"; stopping.lifetime = .keepAlways; add(stopping)
+        XCTAssertTrue(app.staticTexts["operationStopped"].waitForExistence(timeout: 30))
+        XCTAssertEqual(app.staticTexts["operationStopped"].label, "Resizing stopped")
+        XCTAssertFalse(app.staticTexts["failedStep"].exists)
+        let result = XCTAttachment(screenshot: app.screenshot())
+        result.name = "Stopped result"; result.lifetime = .keepAlways; add(result)
+        app.buttons["backToStorage"].tap()
+        XCTAssertTrue(app.buttons["adjustSize"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["adjustSize"].isEnabled)
+    }
+
     func testHeartbeatRemainsFreshDuringLongResize() throws {
         try reset("longSilence", scale: 0.4)
         let app = XCUIApplication()

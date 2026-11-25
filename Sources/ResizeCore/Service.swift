@@ -28,6 +28,10 @@ public struct Operation: Codable, Equatable, Sendable {
     /// While shrinking APFS in several calls: the call running or last run.
     /// Absent in records from before shrinks ran in steps, and for growth.
     public var apfsStep: APFSStepProgress?
+    /// The user asked to stop after the running shrink step. Absent: not asked.
+    public var stopRequested: Bool?
+    /// The operation ended because of that request, not because of an error.
+    public var stoppedByUser: Bool?
     public var currentStep: OperationStep? { plan.steps.indices.contains(stepIndex) ? plan.steps[stepIndex] : nil }
     public var isActive: Bool { status == .running }
 
@@ -96,6 +100,12 @@ public struct SnapshotRequest: Codable, Sendable {
     public init(revision: UUID, name: String) { self.revision = revision; self.name = name }
 }
 
+/// Stop a stepwise shrink after the step now running.
+public struct StopRequest: Codable, Sendable {
+    public var operationID: UUID
+    public init(operationID: UUID) { self.operationID = operationID }
+}
+
 public struct ScenarioRequest: Codable, Sendable {
     public var scenario: MockScenario
     public var timeScale: Double
@@ -114,9 +124,16 @@ public protocol ResizeService: Sendable {
     func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>)
     func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    /// Drops an open connection; the next request opens a new one.
+    func disconnect()
     func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+}
+
+public extension ResizeService {
+    func disconnect() {}
 }
 
 @available(iOS 13, macOS 10.15, *)
@@ -129,6 +146,9 @@ public extension ResizeService {
     }
     func start(_ request: StartRequest) async throws -> ServiceSnapshot {
         try await withCheckedThrowingContinuation { c in start(request) { c.resume(with: $0) } }
+    }
+    func stop(_ request: StopRequest) async throws -> ServiceSnapshot {
+        try await withCheckedThrowingContinuation { c in stop(request) { c.resume(with: $0) } }
     }
     func configureMock(_ request: ScenarioRequest) async throws -> ServiceSnapshot {
         try await withCheckedThrowingContinuation { c in configureMock(request) { c.resume(with: $0) } }
@@ -147,6 +167,7 @@ public struct HTTPResizeService: ResizeService {
     public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshot", body: nil, completion: completion) }
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { send("plan", encoding: request, completion: completion) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations", encoding: request, completion: completion) }
+    public func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations/stop", encoding: request, completion: completion) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("admin/scenario", encoding: request, completion: completion) }
     public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshots/remove", encoding: request, completion: completion) }
     public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshots/take", encoding: request, completion: completion) }
@@ -185,6 +206,7 @@ public struct UnavailableDeviceService: ResizeService {
     public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { completion(.failure(error)) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
+    public func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
