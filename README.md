@@ -71,7 +71,7 @@ Other devices and iOS versions are untested.
    to `.work/palera1n.log` or `.work/checkra1n.log`, shown only if the boot fails.
 
    On iOS 12 to 14 the launcher then copies Resize APFS to the device over the USB
-   cable. When you are done in the app, press Enter in the terminal and it removes
+   cable. When you are done in the app, type `done` in the terminal and it removes
    the app again.
 
 4. Wait for iOS/iPadOS to finish starting normally, then unlock your device.

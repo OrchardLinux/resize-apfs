@@ -270,16 +270,23 @@ def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, p
     raise ValueError(hint.format(last))
 
 
-PROMPT = 'Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. '
+PROMPT = 'Resize APFS is on the Home Screen. When you are done, type done and press Enter to take it off the device: '
 RETRY_SECONDS = 3
 
 
+def ask_to_remove(ask):
+    """Until the user types `done`: a stray Enter or other key keeps the app on the device.
+    (A running resize is never stopped either way; see `leave`.)"""
+    while (ask(PROMPT) or '').strip().lower() != 'done':
+        print('Resize APFS stays on the device.', flush=True)
+
+
 def leave(session, ask, sleep=time.sleep, app_path=APP):
-    """After Enter: remove the app once the helper clearly says no resize runs. A device that
-    does not answer is asked again every few seconds, without a time limit, so cleanup never
-    follows silence; Ctrl-C ends the wait and removes nothing. A running resize asks for
-    Enter again."""
-    ask(PROMPT)
+    """After the user types `done`: remove the app once the helper clearly says no resize
+    runs. A device that does not answer is asked again every few seconds, without a time
+    limit, so cleanup never follows silence; Ctrl-C ends the wait and removes nothing. A
+    running resize asks again."""
+    ask_to_remove(ask)
     waiting = False
     while True:
         state = busy(session)
@@ -294,7 +301,7 @@ def leave(session, ask, sleep=time.sleep, app_path=APP):
             continue
         waiting = False
         print('A resize is still running. Wait until the app shows it has finished.')
-        ask(PROMPT)
+        ask_to_remove(ask)
 
 
 def run(executable, ask=input):
