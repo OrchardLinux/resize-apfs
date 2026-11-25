@@ -4,7 +4,7 @@ Dopamine (A8 to A13 on iOS 15.0-18.7.1 and 26.0-26.0.1, A14 and later on iOS 15.
 app the user sideloads and starts on the device; no bootrom exploit, no DFU. Its bootstrap
 (Procursus `bootstrap-ssh`, bundled in the app) brings OpenSSH, which Dopamine starts with its
 other launch daemons after every jailbreak. Root logins have no password there, so the session
-logs in as `mobile` (password `alpine` unless the user changed it in Dopamine's settings) and
+logs in as `mobile` (with the password the user set when jailbreaking; the bootstrap's `alpine` is tried first) and
 runs each command as root through Procursus's sudo.
 
 Dopamine trusts every program it sees started, so our ad-hoc signed iOS 15+ app and helper
@@ -81,7 +81,8 @@ def session_for(work, password, udid=None, run=None):
 
 
 def connect(work, secret=getpass.getpass, open_session=None):
-    """An open session: with Dopamine's default password, else the one the user set."""
+    """An open session: with the bootstrap's default password, else the one the user set when
+    jailbreaking (Dopamine asks for one, so the default rarely works and is tried silently)."""
     open_session = open_session or (lambda password: session_for(work, password))
     session = open_session(PASSWORD)
     try:
@@ -90,8 +91,7 @@ def connect(work, secret=getpass.getpass, open_session=None):
     except ValueError as error:
         if 'Permission denied' not in str(error):
             raise
-        print(f'The device did not accept the default password for "{USER}".')
-    password = secret(f'Password of "{USER}" on the device (set in Dopamine\'s settings): ')
+    password = secret(f'Password of "{USER}" on the device (the one you set in Dopamine): ')
     require(password, 'No password given.')
     session = open_session(password)
     session.open()

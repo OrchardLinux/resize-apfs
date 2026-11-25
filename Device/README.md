@@ -173,8 +173,8 @@ device's first jailbreak, without checking it. Its own copy has no SSH server, s
 `sideload.py` replaces it with Procursus's `bootstrap-ssh` of the same version (pinned): the same
 files plus OpenSSH, which Dopamine starts with its other launch daemons after each jailbreak
 (port 22). A device already bootstrapped by another copy needs OpenSSH from Sileo or Zebra once.
-Root has no password there, so the session logs in as `mobile` (`alpine` unless changed in
-Dopamine's settings; the launcher asks for the password otherwise) and runs every command as
+Root has no password there, so the session logs in as `mobile` with the password the user set
+when jailbreaking (Dopamine requires one; the bootstrap's `alpine` is tried first, silently) and runs every command as
 root through `/var/jb/usr/bin/sudo -k -S`. sudo reads the password from the first input line,
 one byte at a time, so a copied file follows it unread. The bootstrap's tools come first on
 `PATH`; stock iOS has no `mkdir` or `cat`.
