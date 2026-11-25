@@ -116,7 +116,7 @@ struct Pages {
         case .review: views += review()
         case .submitting, .running, .verifying: views += progress()
         case .completed, .stopped: views += result()
-        case .reconnecting: views += model.operation != nil ? progress() : connection()
+        case .reconnecting: views += model.showsProgress ? progress() : connection()
         }
         return views
     }

@@ -132,7 +132,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
 
     /// Operation pages share one identity so progress and reconnecting keep their scroll position.
     private var identity: String {
-        if [.submitting, .running, .verifying].contains(model.state) || (model.state == .reconnecting && model.operation != nil) { return "operation" }
+        if model.showsProgress { return "operation" }
         return model.state.rawValue
     }
 

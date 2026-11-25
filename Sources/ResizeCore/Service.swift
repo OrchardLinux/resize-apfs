@@ -125,9 +125,15 @@ public protocol ResizeService: Sendable {
     func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>)
     func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    /// Drops an open connection; the next request opens a new one.
+    func disconnect()
     func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+}
+
+public extension ResizeService {
+    func disconnect() {}
 }
 
 @available(iOS 13, macOS 10.15, *)

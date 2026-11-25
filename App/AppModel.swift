@@ -60,6 +60,11 @@ final class AppModel {
     var layout: StorageLayout? { snapshot?.layout }
     var state: ScreenState { machine.state }
     var operation: ResizeCore.Operation? { snapshot?.operation }
+    /// The progress page: while an operation runs, also while reconnecting to it. A
+    /// finished operation has no progress to show, whatever the connection does.
+    var showsProgress: Bool {
+        [.submitting, .running, .verifying].contains(state) || (state == .reconnecting && operation?.isActive == true)
+    }
 
     /// The partitions after APFS, which only an approved erase can replace.
     var followingPartitions: [Partition] {
@@ -138,7 +143,11 @@ final class AppModel {
         pollGeneration += 1
         poll(pollGeneration)
     }
-    func disconnectUI() { polling = false; pollGeneration += 1 }
+    /// In the background the app does not poll, and the helper closes a connection
+    /// that stays idle for a few seconds. The connection is dropped here, so the first
+    /// request after coming back opens a new one instead of failing on the old one
+    /// (which showed the reconnecting page for a moment and left the size editor).
+    func disconnectUI() { polling = false; pollGeneration += 1; service.disconnect() }
 
     private func poll(_ generation: Int) {
         refresh(generation: generation) { [weak self] in
