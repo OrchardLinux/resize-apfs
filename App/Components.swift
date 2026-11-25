@@ -247,6 +247,58 @@ final class OptionRow: UIControl {
 }
 
 /// The bottom action button: blue with dark text, or a quiet disabled box.
+/// iOS's own spinner, turning on one clock shared by every spinner. Pages are
+/// rebuilt while an operation runs (every second), and each rebuild creates new
+/// spinners: on their own, they would start their turn over every time.
+final class ClockedSpinner: UIActivityIndicatorView {
+    /// The shared clock's zero, in CACurrentMediaTime.
+    private static let epoch = CACurrentMediaTime()
+
+    init(style: UIActivityIndicatorView.Style, color: UIColor) {
+        super.init(style: style)
+        self.color = color
+        startAnimating()
+    }
+    required init(coder: NSCoder) { fatalError() }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { align(tries: 10) }
+    }
+
+    // Layout runs before the frame is drawn: aligned here, a new spinner is
+    // never shown at the start of its own turn.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        align(tries: 0)
+    }
+
+    /// UIKit adds the turning animation to its own sublayers some time after the
+    /// spinner reaches the screen. Each is replaced by the same animation begun
+    /// at the shared clock's zero, so it shows the turn every other spinner is at.
+    private func align(tries: Int) {
+        guard window != nil else { return }
+        if !Self.align(layer), tries > 0 {
+            DispatchQueue.main.async { [weak self] in self?.align(tries: tries - 1) }
+        }
+    }
+
+    /// True when the layer tree has an animation (now aligned).
+    private static func align(_ layer: CALayer) -> Bool {
+        var found = false
+        for key in layer.animationKeys() ?? [] {
+            guard let animation = layer.animation(forKey: key) else { continue }
+            found = true
+            let begin = layer.convertTime(epoch, from: nil)
+            guard abs(animation.beginTime - begin) > 0.000_1, let copy = animation.copy() as? CAAnimation else { continue }
+            copy.beginTime = begin
+            layer.add(copy, forKey: key)
+        }
+        for sublayer in layer.sublayers ?? [] where align(sublayer) { found = true }
+        return found
+    }
+}
+
 final class ActionButton: UIControl {
     enum Arrow { case none, leading, trailing }
     private let action: () -> Void
@@ -258,9 +310,7 @@ final class ActionButton: UIControl {
         let tint = disabled ? Theme.faint : Theme.onAccent
         let row = stack(.horizontal, 8, [], align: .center)
         if busy {
-            let spinner = UIActivityIndicatorView(style: .white)
-            spinner.color = Theme.onAccent
-            spinner.startAnimating(); row.addArrangedSubview(spinner)
+            row.addArrangedSubview(ClockedSpinner(style: .white, color: Theme.onAccent))
         } else if arrow == .leading { row.addArrangedSubview(Icon.arrowRight.view(16, color: tint)) }
         row.addArrangedSubview(label(title, Theme.font(14, .semibold, .headline), tint, lines: 1))
         if !busy && arrow == .trailing { row.addArrangedSubview(Icon.arrowRight.view(16, color: tint)) }
@@ -334,8 +384,7 @@ final class StatusBadge: UIView {
         let inner: UIView
         switch kind {
         case .working:
-            let spinner = UIActivityIndicatorView(style: size >= 60 ? .whiteLarge : .white)
-            spinner.color = Theme.blue; spinner.startAnimating()
+            let spinner = ClockedSpinner(style: size >= 60 ? .whiteLarge : .white, color: Theme.blue)
             spinner.translatesAutoresizingMaskIntoConstraints = false
             inner = spinner
         case .success: inner = Icon.check.view(size * 0.4, color: Theme.green, lineWidth: 2.4)

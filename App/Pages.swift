@@ -390,8 +390,7 @@ struct Pages {
         let status: UIView
         if op.completedSteps.contains(step) { status = Icon.checkCircle.view(18, color: Theme.green) }
         else if current {
-            let spinner = UIActivityIndicatorView(style: .white)
-            spinner.color = Theme.blue; spinner.startAnimating()
+            let spinner = ClockedSpinner(style: .white, color: Theme.blue)
             spinner.widthAnchor.constraint(equalToConstant: 18).isActive = true
             status = spinner
         } else { status = Icon.circle.view(18, color: Theme.faint) }
