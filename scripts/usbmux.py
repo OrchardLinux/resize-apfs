@@ -23,6 +23,10 @@ class UsbmuxError(Exception):
     pass
 
 
+class MultipleDevices(UsbmuxError):
+    """Several iOS devices are connected: waiting longer cannot fix it."""
+
+
 def _receive(sock, size):
     data = b''
     while len(data) < size:
@@ -76,7 +80,7 @@ def connect(port, udid=None):
     if not found:
         raise UsbmuxError('No iOS device is connected over USB.')
     if len(found) > 1:
-        raise UsbmuxError('More than one iOS device is connected. Connect only the device to resize.')
+        raise MultipleDevices('More than one iOS device is connected. Connect only the device to resize.')
     sock = connect_service()
     reply = request(sock, {'MessageType': 'Connect', 'DeviceID': found[0][0],
                            'PortNumber': socket.htons(port)})

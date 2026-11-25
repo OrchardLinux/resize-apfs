@@ -183,6 +183,9 @@ def ssh_problem(udid=None, connect=None):
     """
     try:
         sock = (connect or usbmux.connect)(SSH_PORT, udid)
+    except usbmux.MultipleDevices as error:
+        # Not a device still starting: say so now instead of after the whole wait.
+        raise ValueError(str(error)) from None
     except usbmux.UsbmuxError as error:
         return str(error)
     try:

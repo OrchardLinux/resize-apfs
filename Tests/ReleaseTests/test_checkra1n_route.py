@@ -361,6 +361,18 @@ class SessionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no iOS 12-14 app'):
             checkra1n_route.payload(self.work / 'missing')
 
+    def test_a_second_device_is_reported_at_once(self):
+        polls = []
+        def problem_source(port, udid):
+            polls.append(port)
+            raise usbmux.MultipleDevices('More than one iOS device is connected. Connect only the device to resize.')
+        with mock.patch.object(usbmux, 'connect', side_effect=problem_source), mock.patch('sys.stdout', io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'More than one iOS device'):
+                checkra1n_route.wait_for_ssh(timeout=300, sleep=lambda s: None, now=lambda: 0)
+            with self.assertRaisesRegex(ValueError, 'More than one iOS device'):
+                checkra1n_route.ssh_answers()
+        self.assertEqual(len(polls), 2, 'one poll each, no waiting')
+
     def test_waiting_gives_up_with_advice(self):
         clock = iter(range(0, 1000, 100))
         with mock.patch.object(usbmux, 'connect', side_effect=usbmux.UsbmuxError('No iOS device is connected over USB.')), \
