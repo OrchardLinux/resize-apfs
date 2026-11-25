@@ -91,7 +91,9 @@ int raf_partition_capacity(const char *bsd, uint64_t *bytes) {
 #else
     if (strncmp(bsd, "disk0s", 6) || !bsd[6] || strlen(bsd) > 16) return EINVAL;
     for (const char *p = bsd + 6; *p; ++p) if (!isdigit((unsigned char)*p)) return EINVAL;
-    char path[32]; snprintf(path, sizeof(path), "/dev/%s", bsd);
+    // The raw device: a mounted APFS container holds its partition's block device
+    // exclusively, so opening /dev/disk0sN fails with EBUSY (seen on iOS 12.5.8).
+    char path[32]; snprintf(path, sizeof(path), "/dev/r%s", bsd);
     int fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (fd < 0) return errno;
     uint32_t sector = 0; uint64_t blocks = 0;
