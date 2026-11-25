@@ -196,11 +196,14 @@ public enum ShrinkSteps {
     /// 16 GB calls worked on the A9 iPhone 6s Plus where one 48 GB call ran into
     /// the iOS watchdog (4ea2cf2); without a map nothing bounds the data moved.
     public static let maximumFallbackStepBytes: Int64 = 16 << 30
-    public static let slowCallSeconds: Double = 30
-    public static let fastCallSeconds: Double = 10
-    /// What a growing budget aims a call at: well inside the fast range's
-    /// headroom to `slowCallSeconds`.
-    public static let targetCallSeconds: Double = 15
+    /// The iOS watchdog resets the device after about 90 s without a check-in
+    /// (docs/j96-ios15-preparation.md: 91 s, the worker blocked in the kernel).
+    /// Calls aim at a third of that, so one step twice as slow as estimated
+    /// stays far from it and only halves the next; each step also shows
+    /// progress (an update every half minute or so, never a silent half hour).
+    public static let slowCallSeconds: Double = 45
+    public static let fastCallSeconds: Double = 20
+    public static let targetCallSeconds: Double = 30
     /// Intermediate targets are whole MiB from the container start.
     public static let alignment: Int64 = 1 << 20
     /// A short rest between calls, so writes iOS queued during one call can
