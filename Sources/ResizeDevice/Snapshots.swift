@@ -30,8 +30,10 @@ public enum SystemSnapshots {
     /// Combines the mounted volume's list with the on-disk metadata. Removable only
     /// when both agree it exists on exactly one system volume and neither the
     /// volume's boot (root_to) nor revert (revert_to) marker points at it.
-    /// `minimumBytes` is iOS's own minimum query with the snapshot in place.
-    public static func state(mounted: [String], report: APFSSnapshotReport?, minimumBytes: Int64?) -> SystemSnapshot {
+    /// `minimumBytes` is iOS's own minimum query with the snapshot in place;
+    /// `allocatedBytes` what the container uses in all.
+    public static func state(mounted: [String], report: APFSSnapshotReport?, minimumBytes: Int64?,
+                             allocatedBytes: Int64? = nil) -> SystemSnapshot {
         guard mounted.contains(name) else { return SystemSnapshot(name: name, present: false, removable: false) }
         guard let report else { return SystemSnapshot(name: name, present: true, removable: false) }
         let holders = report.volumes.filter { volume in volume.snapshots.contains { $0.name == name } }
@@ -42,22 +44,31 @@ public enum SystemSnapshots {
         }
         let removable = !snapshot.isRootTo && !snapshot.isRevertTo
         return SystemSnapshot(name: name, present: true, removable: removable,
-                              heldBytes: heldBytes(by: snapshot, in: volume, report: report, minimumBytes: minimumBytes))
+                              heldBytes: heldBytes(by: snapshot, in: volume, report: report, minimumBytes: minimumBytes,
+                                                   allocatedBytes: allocatedBytes))
     }
 
-    /// iOS's minimum minus the minimum the kernel's formula gives for the highest
-    /// block everything else still uses; 0 when this snapshot is not the one that
-    /// sets the limit; nil when the inputs are incomplete.
+    /// iOS's minimum minus the minimum without this snapshot; 0 when it is not
+    /// the one that sets the limit; nil when the inputs are incomplete.
+    ///
+    /// Without it, the limit is the highest block any other snapshot keeps (a
+    /// snapshot's blocks stay where they are) and at least what the container
+    /// uses (`allocatedBytes`), packed from the start: a shrink moves live data
+    /// down, so the highest live block is no limit. Counting it was the error
+    /// that put orig-fs at 0.1 GB on a J86 where removing it lowered iOS's
+    /// minimum from 31.75 to 17.34 GB (resize-apfs#11). Without
+    /// `allocatedBytes`, the highest live block stands in for it.
     static func heldBytes(by snapshot: APFSSnapshotReport.SnapshotDetail, in volume: APFSSnapshotReport.VolumeDetail,
-                          report: APFSSnapshotReport, minimumBytes: Int64?) -> Int64? {
-        guard let minimumBytes, snapshot.parseNote == nil else { return nil }
-        var others: [UInt64] = []
+                          report: APFSSnapshotReport, minimumBytes: Int64?, allocatedBytes: Int64? = nil) -> Int64? {
+        guard let minimumBytes, snapshot.parseNote == nil, report.blockSize > 0 else { return nil }
+        var snapshots: [UInt64] = [], live: [UInt64] = []
         for candidate in report.volumes {
             guard candidate.parseNote == nil else { return nil }
-            others += [candidate.liveExtentMaxBlock, candidate.liveOmapMaxBlock].compactMap { $0 }
-            others += candidate.snapshots.filter { !(candidate.fsOID == volume.fsOID && $0.name == snapshot.name) }.map(\.effectiveTidemarkBlock)
+            live += [candidate.liveExtentMaxBlock, candidate.liveOmapMaxBlock].compactMap { $0 }
+            snapshots += candidate.snapshots.filter { !(candidate.fsOID == volume.fsOID && $0.name == snapshot.name) }.map(\.effectiveTidemarkBlock)
         }
-        guard let rest = others.max(), rest > 0 else { return nil }
+        let used: UInt64? = allocatedBytes.map { UInt64(max(0, $0) / report.blockSize) } ?? live.max()
+        guard let rest = (snapshots + [used ?? 0]).max(), rest > 0 else { return nil }
         guard snapshot.effectiveTidemarkBlock > rest else { return 0 }
         let without = APFSSnapshotReport.estimateMinimumBytes(tidemarkBlocks: Int64(rest), totalBlocks: report.blockCount,
                                                              blockSize: report.blockSize, maxFileSystems: report.maxFileSystems)
@@ -82,17 +93,18 @@ public enum SystemSnapshots {
         inspection.layout.snapshotVolumes = nil
         guard applicable, !source.isFixture, let names = mounted() else { return }
         let report = try? report(source, inspection)
-        let minimum = inspection.layout.minimumContainerBytes
-        inspection.layout.systemSnapshot = state(mounted: names, report: report, minimumBytes: minimum)
-        inspection.layout.snapshotVolumes = report.map { volumes($0, minimumBytes: minimum) }
+        let minimum = inspection.layout.minimumContainerBytes, used = inspection.layout.allocatedBytes
+        inspection.layout.systemSnapshot = state(mounted: names, report: report, minimumBytes: minimum, allocatedBytes: used)
+        inspection.layout.snapshotVolumes = report.map { volumes($0, minimumBytes: minimum, allocatedBytes: used) }
     }
 
     /// Every volume and its snapshots, for Technical details.
-    public static func volumes(_ report: APFSSnapshotReport, minimumBytes: Int64?) -> [SnapshotVolume] {
+    public static func volumes(_ report: APFSSnapshotReport, minimumBytes: Int64?, allocatedBytes: Int64? = nil) -> [SnapshotVolume] {
         report.volumes.map { volume in
             SnapshotVolume(volume: volume.name, role: volume.roleName, snapshots: volume.snapshots.map { snapshot in
                 SnapshotVolume.Entry(name: snapshot.name, bootsFrom: snapshot.isRootTo, revertsTo: snapshot.isRevertTo,
-                                     heldBytes: heldBytes(by: snapshot, in: volume, report: report, minimumBytes: minimumBytes))
+                                     heldBytes: heldBytes(by: snapshot, in: volume, report: report, minimumBytes: minimumBytes,
+                                                          allocatedBytes: allocatedBytes))
             })
         }
     }
