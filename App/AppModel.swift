@@ -34,6 +34,9 @@ final class AppModel {
     let service: ResizeService
     let isSimulator: Bool
     var onChange: (() -> Void)?
+    /// While the bar is dragged: the controls outside the editor (the footer's
+    /// Review button) follow without a full render.
+    var onPreview: (() -> Void)?
 
     /// Replaces the cancellable polling Task: a refresh only counts while its
     /// polling generation is current, as `Task.isCancelled` guarded it before.
@@ -250,6 +253,7 @@ final class AppModel {
         else { targetExact = nil; targetText = String(format: "%.0f", gb) }
         reviewedPlan = nil
         updateFree()
+        onPreview?()
     }
     func setCreateLinux(_ value: Bool) {
         createLinux = value && canCreateLinuxPartition; reviewedPlan = nil

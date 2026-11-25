@@ -101,6 +101,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             footer.widthAnchor.constraint(lessThanOrEqualToConstant: metrics.contentWidth), footerWidth, footerCap,
         ])
         model.onChange = { [weak self] in self?.render() }
+        model.onPreview = { [weak self] in self?.renderFooter() }
         NotificationCenter.default.addObserver(self, selector: #selector(keyboard(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboard(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         render()
@@ -177,18 +178,26 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             for view in Pages(self, m).build() { page.addArrangedSubview(view) }
         }
         pageKey = keys.page
-        if changedPage || keys.footer != footerKey {
-            footer.arrangedSubviews.forEach { $0.removeFromSuperview() }
-            for view in Pages(self, m).footer() { footer.addArrangedSubview(view) }
-            footerBar.isHidden = footer.arrangedSubviews.isEmpty
-            footerKey = keys.footer
-        }
+        renderFooter(keys.footer, force: changedPage)
         if changedPage { scroll.layoutIfNeeded(); scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false) }
         if let snapshot { transition(from: snapshot, previous: previous) }
         let ticking = identity == "operation"
         if ticking && ticker == nil {
             ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.render() }
         } else if !ticking { ticker?.invalidate(); ticker = nil }
+    }
+
+    /// Rebuilds the footer when what it shows changed: on every render, and while
+    /// the bar is dragged, so the Review button enables as soon as the size is valid
+    /// rather than when the finger lifts (at most once per change of its state).
+    func renderFooter(_ key: String? = nil, force: Bool = false) {
+        guard isViewLoaded else { return }
+        let key = key ?? renderKeys().footer
+        guard force || key != footerKey else { return }
+        footer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for view in Pages(self, metrics).footer() { footer.addArrangedSubview(view) }
+        footerBar.isHidden = footer.arrangedSubviews.isEmpty
+        footerKey = key
     }
 
     /// Everything the page and footer are built from, except the snapshot's
