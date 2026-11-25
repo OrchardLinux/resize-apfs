@@ -24,6 +24,11 @@ import tools  # noqa: E402
 import usbmux  # noqa: E402
 
 
+def answering(prompts):
+    """An `ask` that records each prompt and types done."""
+    return lambda prompt: prompts.append(prompt) or 'done'
+
+
 def pin_for(data, package='executable'):
     return dict(url='https://example.invalid/tool', size=len(data), sha256=hashlib.sha256(data).hexdigest(),
                 package=package, member=None, executable_sha256=None)
@@ -92,20 +97,24 @@ class ToolTests(unittest.TestCase):
 
 class VersionChoiceTests(unittest.TestCase):
     def test_the_answer_picks_the_route(self):
-        with mock.patch('builtins.input', return_value='2'), mock.patch('sys.stdout', io.StringIO()):
-            self.assertEqual(launcher.ios_version(None), 12)
-        with mock.patch('builtins.input', return_value='1'), mock.patch('sys.stdout', io.StringIO()):
-            self.assertEqual(launcher.ios_version(None), 15)
+        for answer, chosen in (('1', 'palera1n'), ('2', 'checkra1n'), ('3', 'dopamine')):
+            with mock.patch('builtins.input', return_value=answer), mock.patch('sys.stdout', io.StringIO()):
+                self.assertEqual(launcher.route(None), chosen)
 
-    def test_the_option_skips_the_question(self):
+    def test_the_options_skip_the_question(self):
         with mock.patch('builtins.input', side_effect=AssertionError('asked')):
-            self.assertEqual(launcher.ios_version(14), 14)
+            self.assertEqual(launcher.route(14), 'checkra1n')
+            self.assertEqual(launcher.route(17), 'palera1n')
+            self.assertEqual(launcher.route(None, dopamine=True), 'dopamine')
+            self.assertEqual(launcher.route(18, dopamine=True), 'dopamine')
 
     def test_older_than_12_and_other_answers_are_refused(self):
         with self.assertRaises(ValueError):
-            launcher.ios_version(11)
-        with mock.patch('builtins.input', return_value='3'), mock.patch('sys.stdout', io.StringIO()), self.assertRaises(ValueError):
-            launcher.ios_version(None)
+            launcher.route(11)
+        with self.assertRaises(ValueError):
+            launcher.route(14, dopamine=True)
+        with mock.patch('builtins.input', return_value='4'), mock.patch('sys.stdout', io.StringIO()), self.assertRaises(ValueError):
+            launcher.route(None)
 
 
 class BootRunTests(unittest.TestCase):
@@ -373,8 +382,8 @@ class SessionTests(unittest.TestCase):
         session, commands = self.silent_then([255, 'timeout', 1])
         prompts, output, sleeps = [], io.StringIO(), []
         with mock.patch('sys.stdout', output):
-            checkra1n_route.leave(session, ask=prompts.append, sleep=sleeps.append)
-        self.assertEqual(len(prompts), 1, 'one Enter')
+            checkra1n_route.leave(session, ask=answering(prompts), sleep=sleeps.append)
+        self.assertEqual(len(prompts), 1, 'one answer')
         self.assertEqual(output.getvalue().count('Waiting for the device to answer. Unlock it if it is locked.'), 1)
         self.assertEqual(len(sleeps), 2)
         self.assertEqual(sum('--unregister-app /private/var/ResizeAPFS/ResizeAPFS.app; rm -rf' in c for c in commands), 1)
@@ -383,16 +392,26 @@ class SessionTests(unittest.TestCase):
         session, commands = self.silent_then([255, 0, 1])
         prompts, output = [], io.StringIO()
         with mock.patch('sys.stdout', output):
-            checkra1n_route.leave(session, ask=prompts.append, sleep=lambda s: None)
+            checkra1n_route.leave(session, ask=answering(prompts), sleep=lambda s: None)
         self.assertEqual(len(prompts), 2)
         self.assertIn('A resize is still running. Wait until the app shows it has finished.', output.getvalue())
+
+    def test_only_typing_done_removes_the_app(self):
+        session, commands = self.silent_then([1])
+        answers = iter(['', 'y', 'Done '])
+        prompts, output = [], io.StringIO()
+        with mock.patch('sys.stdout', output):
+            checkra1n_route.leave(session, ask=lambda p: prompts.append(p) or next(answers), sleep=lambda s: None)
+        self.assertEqual(len(prompts), 3)
+        self.assertEqual(output.getvalue().count('Resize APFS stays on the device.'), 2)
+        self.assertEqual(sum('--unregister-app' in c for c in commands), 1, 'removed once, after "done"')
 
     def test_ctrl_c_while_waiting_removes_nothing(self):
         session, commands = self.silent_then([255] * 10)
         def interrupt(seconds):
             raise KeyboardInterrupt
         with mock.patch('sys.stdout', io.StringIO()), self.assertRaises(KeyboardInterrupt):
-            checkra1n_route.leave(session, ask=lambda p: None, sleep=interrupt)
+            checkra1n_route.leave(session, ask=lambda p: 'done', sleep=interrupt)
         self.assertFalse(any('kill' in c or '--unregister-app' in c for c in commands))
 
     def test_a_failed_connection_during_removal_is_retried(self):
@@ -408,7 +427,7 @@ class SessionTests(unittest.TestCase):
                 mock.patch.object(checkra1n_route, 'checkra1n_command', return_value=['checkra1n']), \
                 mock.patch.object(checkra1n_route.time, 'sleep'), \
                 mock.patch.object(session, 'open'), mock.patch('sys.stdout', output):
-            checkra1n_route.run('checkra1n', ask=prompts.append)
+            checkra1n_route.run('checkra1n', ask=answering(prompts))
         self.assertEqual(len(prompts), 1)
         self.assertEqual(output.getvalue().count('Waiting for the device to answer.'), 1)
         self.assertEqual(output.getvalue().count('Removed.'), 1)

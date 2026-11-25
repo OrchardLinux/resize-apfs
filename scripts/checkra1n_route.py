@@ -50,23 +50,29 @@ SSH_PORT = 44
 PASSWORD = 'alpine'
 
 
-def payload(root=PAYLOAD):
+def payload(root=PAYLOAD, missing='This release has no iOS 12-14 app yet (out/device-ios12). '
+            'Use the iOS 15+ route or a newer release.'):
     app, helper = root / 'ResizeAPFS.app', root / 'resize-helper'
-    require(app.is_dir() and helper.is_file(),
-            'This release has no iOS 12-14 app yet (out/device-ios12). Use the iOS 15+ route or a newer release.')
+    require(app.is_dir() and helper.is_file(), missing)
     return app, helper
 
 
 class Session:
-    """One SSH connection to checkra1n's server, reused for every command (ControlMaster)."""
+    """One SSH connection to the device's server, reused for every command (ControlMaster).
 
-    def __init__(self, work, udid=None, run=subprocess.run):
+    checkra1n's server takes root directly. `sudo` (the Dopamine route) logs in as an ordinary
+    user and runs each command as root through that path to sudo, with the same password.
+    `server` names the SSH server in errors."""
+
+    def __init__(self, work, udid=None, run=subprocess.run, port=SSH_PORT, user='root', password=PASSWORD,
+                 sudo=None, shell='sh', path=None, server="checkra1n's SSH server"):
         self.work = pathlib.Path(work)
         self.run_process = run
+        self.password, self.sudo, self.shell, self.path, self.server = password, sudo, shell, path, server
         askpass = self.work / 'askpass'
-        askpass.write_text(f'#!/bin/sh\necho {PASSWORD}\n')
+        askpass.write_text(f'#!/bin/sh\necho {shlex.quote(password)}\n')
         askpass.chmod(0o700)
-        proxy = shlex.join([sys.executable, str(ROOT / 'scripts/usbmux.py'), 'proxy', str(SSH_PORT), *([udid] if udid else [])])
+        proxy = shlex.join([sys.executable, str(ROOT / 'scripts/usbmux.py'), 'proxy', str(port), *([udid] if udid else [])])
         self.env = {**os.environ, 'SSH_ASKPASS': str(askpass), 'SSH_ASKPASS_REQUIRE': 'force', 'DISPLAY': os.environ.get('DISPLAY', ':0')}
         self.base = ['ssh', '-T',
                      '-o', 'ProxyCommand=' + proxy,
@@ -76,17 +82,29 @@ class Session:
                      # Each checkra1n boot may present a new host key; nothing is saved.
                      '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null',
                      '-o', 'LogLevel=ERROR', '-o', 'ServerAliveInterval=15', '-o', 'ConnectTimeout=20',
-                     'root@iphone']
+                     user + '@iphone']
 
     def open(self):
         result = self.run_process([*self.base[:2], '-o', 'ControlMaster=yes', '-o', 'ControlPersist=yes', '-N', '-f',
                                    *self.base[2:]], env=self.env, capture_output=True, text=True, timeout=60)
-        require(result.returncode == 0, "checkra1n's SSH server did not accept the connection: " + result.stderr.strip())
+        require(result.returncode == 0, f'{self.server} did not accept the connection: ' + result.stderr.strip())
 
     def close(self):
         self.run_process([*self.base, '-O', 'exit'], env=self.env, capture_output=True, timeout=30)
 
+    def command(self, script, stdin):
+        """The remote command line and its input. With sudo: `-k` always asks for the password,
+        which sudo reads from the first input line, one byte at a time, so the rest of the input
+        reaches the command unread."""
+        if self.path:
+            script = f'PATH={self.path}; export PATH; {script}'
+        if not self.sudo:
+            return script, stdin
+        return (shlex.join([self.sudo, '-k', '-S', '-p', '', self.shell, '-c', script]),
+                self.password.encode() + b'\n' + (stdin or b''))
+
     def sh(self, script, what, stdin=None, check=True, timeout=300):
+        script, stdin = self.command(script, stdin)
         result = self.run_process([*self.base, script], env=self.env, input=stdin, capture_output=True, timeout=timeout)
         if check:
             detail = result.stderr.decode(errors='replace').strip() if isinstance(result.stderr, bytes) else (result.stderr or '').strip()
@@ -124,28 +142,30 @@ def leftover_script(session_folder, app):
             f'rm -rf {app} {session_folder}')
 
 
-def remove_leftovers(session):
+def remove_leftovers(session, app=APP):
     """Undo an earlier session that ended before its cleanup, also one from the old location
     (its own helper unregisters its app). Safe when there is none: removing a path that does
-    not exist succeeds on a read-only system partition too."""
-    session.sh(leftover_script(OLD_SESSION, OLD_APP) + '; ' + leftover_script(SESSION, APP), 'Removing an earlier session')
+    not exist succeeds on a read-only system partition too. `app`: where this route puts the
+    app, when not in the session folder; its leftover goes first, while the helper is there."""
+    scripts = ([leftover_script(SESSION, app)] if app != APP else []) + [leftover_script(OLD_SESSION, OLD_APP), leftover_script(SESSION, APP)]
+    session.sh('; '.join(scripts), 'Removing an earlier session')
 
 
-def install(session, app, helper):
+def install(session, app, helper, app_path=APP):
     # 755: the app runs as mobile and must read its bundle; the helper trusts it only while
     # nobody but root can change it.
     session.sh(f'umask 022; mkdir -p {SESSION} && chmod 755 {SESSION}', 'Preparing the session folder')
     session.put_file(helper, HELPER, 0o755)
-    session.put_tree(app, APP)
-    session.sh(f'{HELPER} --register-app {APP}', 'Adding the app to the home screen')
+    session.put_tree(app, app_path)
+    session.sh(f'{HELPER} --register-app {app_path}', 'Adding the app to the home screen')
 
 
-def start_helper(session):
+def start_helper(session, app_path=APP):
     """The helper as root for this session, detached from the SSH connection: a dropped
     connection (a locked device that sleeps stops answering keepalives) must not take the
     helper, and a running resize, with it. Its process id goes to PIDFILE, its output to
     HELPER_LOG; `finish` or the next session's leftover cleanup stops it."""
-    session.sh(f"cd /; trap '' HUP; {HELPER} --session --allow-writes --ui-path {APP}/ResizeAPFS "
+    session.sh(f"cd /; trap '' HUP; {HELPER} --session --allow-writes --ui-path {app_path}/ResizeAPFS "
                f'</dev/null >{HELPER_LOG} 2>&1 & echo $! > {PIDFILE}', 'Starting the helper')
 
 
@@ -161,7 +181,7 @@ def busy(session):
     return {0: True, 1: False}.get(code)
 
 
-def finish(session):
+def finish(session, app_path=APP):
     """Stop the helper and remove the app, unless a resize is running by then: the device
     script asks the helper again first (exit 3), so nothing is stopped mid-resize even if
     one started after the last check. 'busy', 'unanswered' (the device could not be reached;
@@ -178,7 +198,8 @@ def finish(session):
     if stopped.returncode != 0:
         return 'busy' if stopped.returncode == 3 else 'unanswered'
     try:
-        removed = session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app', check=False, timeout=90)
+        removed = session.sh(f'{HELPER} --unregister-app {app_path}; rm -rf {app_path if app_path != APP else ""} {SESSION}'.replace('  ', ' '),
+                             'Removing the app', check=False, timeout=90)
     except subprocess.TimeoutExpired:
         return 'unanswered'
     if removed.returncode == 255:
@@ -202,7 +223,7 @@ def checkra1n_command(executable, run=subprocess.run):
     return command
 
 
-def ssh_problem(udid=None, connect=None):
+def ssh_problem(udid=None, connect=None, port=SSH_PORT):
     """None when checkra1n's SSH server on the booted device sends its greeting over USB,
     else why not.
 
@@ -211,7 +232,7 @@ def ssh_problem(udid=None, connect=None):
     in iOS without checkra1n's server, is not listed by usbmuxd or refuses the port.
     """
     try:
-        sock = (connect or usbmux.connect)(SSH_PORT, udid)
+        sock = (connect or usbmux.connect)(port, udid)
     except usbmux.MultipleDevices as error:
         # Not a device still starting: say so now instead of after the whole wait.
         raise ValueError(str(error)) from None
@@ -231,9 +252,14 @@ def ssh_answers(udid=None):
     return ssh_problem(udid) is None
 
 
-def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, problem=ssh_problem):
-    """Wait until iOS is back and checkra1n's SSH server answers over USB."""
-    print('Waiting for iOS to start...', flush=True)
+CHECKRA1N_HINT = ("checkra1n's SSH server did not come up: {}. Unlock the device; if it stays in iOS "
+                  'without the checkra1n app, run checkra1n again.')
+
+
+def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, problem=ssh_problem,
+                 waiting='Waiting for iOS to start...', hint=CHECKRA1N_HINT):
+    """Wait until the device's SSH server answers over USB."""
+    print(waiting, flush=True)
     deadline = now() + timeout
     last = None
     while now() < deadline:
@@ -241,24 +267,30 @@ def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, p
         if last is None:
             return
         sleep(3)
-    raise ValueError(f"checkra1n's SSH server did not come up: {last}. Unlock the device; if it stays in iOS "
-                     'without the checkra1n app, run checkra1n again.')
+    raise ValueError(hint.format(last))
 
 
-PROMPT = 'Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. '
+PROMPT = 'Resize APFS is on the Home Screen. When you are done, type done and press Enter to take it off the device: '
 RETRY_SECONDS = 3
 
 
-def leave(session, ask, sleep=time.sleep):
-    """After Enter: remove the app once the helper clearly says no resize runs. A device that
-    does not answer is asked again every few seconds, without a time limit, so cleanup never
-    follows silence; Ctrl-C ends the wait and removes nothing. A running resize asks for
-    Enter again."""
-    ask(PROMPT)
+def ask_to_remove(ask):
+    """Until the user types `done`: a stray Enter or other key keeps the app on the device.
+    (A running resize is never stopped either way; see `leave`.)"""
+    while (ask(PROMPT) or '').strip().lower() != 'done':
+        print('Resize APFS stays on the device.', flush=True)
+
+
+def leave(session, ask, sleep=time.sleep, app_path=APP):
+    """After the user types `done`: remove the app once the helper clearly says no resize
+    runs. A device that does not answer is asked again every few seconds, without a time
+    limit, so cleanup never follows silence; Ctrl-C ends the wait and removes nothing. A
+    running resize asks again."""
+    ask_to_remove(ask)
     waiting = False
     while True:
         state = busy(session)
-        outcome = 'unanswered' if state is None else 'busy' if state else finish(session)
+        outcome = 'unanswered' if state is None else 'busy' if state else finish(session, app_path)
         if outcome == 'removed':
             return
         if outcome == 'unanswered':
@@ -269,7 +301,7 @@ def leave(session, ask, sleep=time.sleep):
             continue
         waiting = False
         print('A resize is still running. Wait until the app shows it has finished.')
-        ask(PROMPT)
+        ask_to_remove(ask)
 
 
 def run(executable, ask=input):

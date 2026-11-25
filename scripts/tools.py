@@ -1,4 +1,4 @@
-"""The pinned palera1n and checkra1n, downloaded once into the shared Orchard cache.
+"""The pinned palera1n, checkra1n and Dopamine, downloaded once into the shared Orchard cache.
 
 The cache is the graphical installer's (orchard2): `~/Library/Caches/orchard2` on macOS,
 `$XDG_CACHE_HOME/orchard2` or `~/.cache/orchard2` elsewhere. A release file is stored as
@@ -21,6 +21,8 @@ from image_format import require
 
 PALERA1N_RELEASE = 'https://github.com/palera1n/palera1n/releases/download/v3.0.0-beta.4'
 CHECKRA1N_RELEASE = 'https://assets.checkra.in/downloads'
+DOPAMINE_RELEASE = 'https://github.com/opa334/Dopamine/releases/download/3.0.13'
+XTOOL_RELEASE = 'https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2'
 
 # Kept identical to orchard2's crates/flow/src/assets.rs PALERA1N_PINS (v3.0.0-beta.4).
 # (tool, os, arch) -> pin. `member` is the executable inside the package. `bundle` keeps the
@@ -58,10 +60,48 @@ PINS = {
         size=10_360_264, sha256='dac9968939ea6e6bfbdedeb41d7e2579c4711dc2c5083f91dced66ca397dc51d',
         package='executable', member=None, executable_sha256=None),
 }
+# Dopamine 3.0.13, the jailbreak app for the route without DFU. Installed on the device, not
+# run here, so one file serves every computer. It is ad-hoc signed: the user signs it for
+# sideloading (dopamine_route.py).
+DOPAMINE = dict(url=DOPAMINE_RELEASE + '/Dopamine.ipa', size=55_422_988,
+                sha256='3664edd737cc672af5d9036d2d1513fb1d50784f0c0cfd49cc6e651b8c665e14', package='file',
+                member=None, executable_sha256=None)
+# Procursus's bootstrap with OpenSSH, for each bootstrap version Dopamine 3.0.13 bundles: the
+# same files as Dopamine's own copy plus OpenSSH (55 files). sideload.py swaps it in before
+# signing, so a device's first jailbreak brings the SSH server the session uses.
+BOOTSTRAP_SSH = {
+    version: dict(url=f'https://apt.procurs.us/bootstraps/{version}/bootstrap-ssh-iphoneos-arm64.tar.zst',
+                  size=size, sha256=sha256, package='file', member=None, executable_sha256=None)
+    for version, size, sha256 in (
+        ('1800', 21_889_605, '6592e54a1b4ef66d6a515f5bd29cf89e8f45c8e328443554ee596329ffbaf441'),
+        ('1900', 21_873_446, '2c639b83423e4365a3a849e2bc7c56671cdcc8da534d424b6b1779a27c0c7c08'))
+}
+for _system in ('macos', 'linux'):
+    for _arch in ('arm64', 'x86_64'):
+        PINS[('dopamine', _system, _arch)] = DOPAMINE
+        for _version, _pin in BOOTSTRAP_SSH.items():
+            PINS[('bootstrap-ssh-' + _version, _system, _arch)] = _pin
+# xtool 2.0.0-beta.2 signs Dopamine with the user's Apple ID and installs it (sideload.py).
+# The beta, not 1.24.0: it has the anisette crash fix (#422) and the provisioning-profile
+# conflict fix (#430) that re-signing every 7 days runs into; its Apple login already
+# sends the anisette provider's user agent (as omarchy-apple-dev's fork tests).
+PINS[('xtool', 'linux', 'arm64')] = dict(
+    url=XTOOL_RELEASE + '/xtool-aarch64.AppImage', size=65_292_808,
+    sha256='954da46b983f87596bf8500365b2b5458b27d5394f95c6ec579423bb690ec910', package='executable',
+    member=None, executable_sha256=None)
+PINS[('xtool', 'linux', 'x86_64')] = dict(
+    url=XTOOL_RELEASE + '/xtool-x86_64.AppImage', size=67_795_448,
+    sha256='512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd', package='executable',
+    member=None, executable_sha256=None)
+PINS[('xtool', 'macos', 'arm64')] = PINS[('xtool', 'macos', 'x86_64')] = dict(
+    url=XTOOL_RELEASE + '/xtool.app.zip', size=46_999_993,
+    sha256='93e780e4b4f96ba6d48b365bdfe9ae501f111f5dbb751a0d34b9e1317f5428db', package='zip',
+    member='xtool.app/Contents/MacOS/xtool', bundle=True,
+    executable_sha256='ebc400c1479accdd33da9f1905e11d0caaf400d0c087160ce916e4f243b06020')
 PINS[('palera1n', 'macos', 'x86_64')] = PINS[('palera1n', 'macos', 'arm64')]
 PINS[('checkra1n', 'macos', 'x86_64')] = PINS[('checkra1n', 'macos', 'arm64')]
 
-OVERRIDES = {'palera1n': 'PALERA1N', 'checkra1n': 'CHECKRA1N'}
+OVERRIDES = {'palera1n': 'PALERA1N', 'checkra1n': 'CHECKRA1N', 'dopamine': 'DOPAMINE', 'xtool': 'XTOOL'}
 
 
 def host():
@@ -136,6 +176,11 @@ def unpack(package, pin, destination):
                 require(member.isfile(), 'The archive does not hold the expected executable.')
                 with archive.extractfile(member) as source, open(target, 'wb') as out:
                     shutil.copyfileobj(source, out)
+        elif pin['package'] == 'zip':
+            # A notarized macOS app: ditto keeps its links, modes and signature intact.
+            app = pin['member'].split('/', 1)[0]
+            target = work / app
+            subprocess.run(['ditto', '-x', '-k', str(package), str(work)], check=True, capture_output=True, timeout=300)
         else:
             app = pin['member'].split('/', 1)[0]
             target = work / (app if pin.get('bundle') else 'tool')
@@ -158,11 +203,11 @@ def unpack(package, pin, destination):
 
 
 def provide(tool, root=None, fetch=None):
-    """The path of the pinned tool's executable, ready to run.
+    """The path of the pinned tool's executable, ready to run; for Dopamine, its verified IPA.
 
-    `PALERA1N` / `CHECKRA1N` point to a developer's own build instead and skip the download.
+    `PALERA1N` / `CHECKRA1N` / `DOPAMINE` point to a developer's own build instead and skip the download.
     """
-    override = os.environ.get(OVERRIDES[tool])
+    override = os.environ.get(OVERRIDES[tool]) if tool in OVERRIDES else None
     if override:
         path = pathlib.Path(shutil.which(override) or override)
         require(path.is_file(), f'{OVERRIDES[tool]} does not point to a file: {override}')
@@ -170,6 +215,8 @@ def provide(tool, root=None, fetch=None):
     pin = PINS.get((tool, *host()))
     require(pin is not None, f'{tool} has no release for this computer.')
     root = root or cache_root()
+    if pin['package'] == 'file':
+        return package_path(pin, root, fetch)
     tools = root / 'tools'
     tools.mkdir(parents=True, exist_ok=True)
     key = pin['sha256'][:16]  # orchard2 names its unpacked palera1n the same way

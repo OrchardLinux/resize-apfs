@@ -49,18 +49,30 @@ public enum AppRegistration {
     /// reports the app's executable under /private/var, not through the /var link.
     public static let folder = "/private/var/ResizeAPFS"
 
+    /// The folders an app may be registered from: `folder`, and on the Dopamine route the
+    /// jailbreak root's Applications folder. There, iOS 15 and later starts apps only from
+    /// inside the jailbreak root (/var/jb, a link into Preboot): the system policy denies
+    /// launching an app from `folder` (xpcproxy process-exec). As the kernel reports it, so
+    /// through realpath(3).
+    public static func folders(jailbreakRoot: String = "/var/jb") -> [String] {
+        guard let real = realpath(jailbreakRoot, nil) else { return [folder] }
+        defer { free(real) }
+        return [folder, String(cString: real) + "/Applications"]
+    }
+
     public struct Bundle: Equatable {
         public var path: String
         public var identifier: String
         public var executable: String
     }
 
-    public static func validate(_ path: String) throws -> Bundle {
+    public static func validate(_ path: String, folders allowed: [String] = folders()) throws -> Bundle {
         // Compared as text, not standardized: on iOS, Foundation's standardizing
         // drops the leading /private of /private/var paths, so the folder never matched.
-        let name = String(path.dropFirst(folder.count + 1))
-        guard path.hasPrefix(folder + "/"), name.hasSuffix(".app"), name.count > 4, !name.contains("/") else {
-            throw ResizeError("Only an app bundle directly in \(folder) can be registered.")
+        let base = allowed.first { path.hasPrefix($0 + "/") }
+        let name = base.map { String(path.dropFirst($0.count + 1)) } ?? ""
+        guard base != nil, name.hasSuffix(".app"), name.count > 4, !name.contains("/") else {
+            throw ResizeError("Only an app bundle directly in \(allowed.joined(separator: " or ")) can be registered.")
         }
         let url = URL(fileURLWithPath: path, isDirectory: true)
         var info = stat()

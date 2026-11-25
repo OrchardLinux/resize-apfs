@@ -49,6 +49,29 @@ final class SessionTests: XCTestCase {
         }
     }
 
+    func testTheJailbreakRootsApplicationsFolderIsAllowedThroughItsRealPath() throws {
+        let root = try temporaryDirectory()
+        let jailbreak = root.appendingPathComponent("procursus")
+        try FileManager.default.createDirectory(at: jailbreak.appendingPathComponent("Applications"), withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("jb")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: jailbreak)
+        let folders = AppRegistration.folders(jailbreakRoot: link.path)
+        guard let real = realpath(jailbreak.path, nil) else { return XCTFail("no real path") }
+        let applications = String(cString: real) + "/Applications"
+        free(real)
+        XCTAssertEqual(folders, ["/private/var/ResizeAPFS", applications])
+        XCTAssertEqual(AppRegistration.folders(jailbreakRoot: root.appendingPathComponent("missing").path), ["/private/var/ResizeAPFS"])
+        // Directly in the folder: refused only for the missing bundle; nested or through the link: refused for the path.
+        XCTAssertThrowsError(try AppRegistration.validate(applications + "/ResizeAPFS.app", folders: folders)) { error in
+            XCTAssertTrue("\(error.localizedDescription)".contains("not an app bundle directory"))
+        }
+        for path in [applications + "/Other/ResizeAPFS.app", link.path + "/Applications/ResizeAPFS.app"] {
+            XCTAssertThrowsError(try AppRegistration.validate(path, folders: folders), path) { error in
+                XCTAssertTrue("\(error.localizedDescription)".contains("can be registered"), path)
+            }
+        }
+    }
+
     func testOperationActiveWithoutJournalIsFalse() throws {
         XCTAssertFalse(DeviceEngine.operationActive(directory: try temporaryDirectory()))
     }
