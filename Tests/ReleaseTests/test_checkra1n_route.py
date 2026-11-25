@@ -324,12 +324,11 @@ class SessionTests(unittest.TestCase):
     def test_cleanup_stops_the_helper_unregisters_and_deletes(self):
         recorder = Recorder()
         session = checkra1n_route.Session(self.work, run=recorder)
-        process = mock.Mock()
-        checkra1n_route.finish(session, process)
-        self.assertIn('kill', recorder.commands[0])
+        checkra1n_route.finish(session)
+        self.assertIn('kill "$pid"', recorder.commands[0])
+        self.assertIn('kill -9', recorder.commands[0], 'a helper that ignores the request is still stopped')
         self.assertEqual(recorder.commands[-1], '/private/var/ResizeAPFS/resize-helper --unregister-app '
                          '/private/var/ResizeAPFS/ResizeAPFS.app; rm -rf /private/var/ResizeAPFS')
-        process.wait.assert_called_once()
 
     def test_leftovers_are_removed_from_the_session_folder_and_the_old_location(self):
         recorder = Recorder()
@@ -344,12 +343,14 @@ class SessionTests(unittest.TestCase):
                       'rm -rf /private/var/ResizeAPFS/ResizeAPFS.app /private/var/ResizeAPFS', script)
         self.assertLess(script.index('/Applications/ResizeAPFS.app'), script.index('/private/var/ResizeAPFS/resize-helper'))
 
-    def test_the_helper_serves_the_app_in_the_session_folder(self):
-        session = checkra1n_route.Session(self.work, run=Recorder())
-        popen = mock.Mock()
-        checkra1n_route.start_helper(session, popen=popen)
-        self.assertTrue(popen.call_args.args[0][-1].endswith(
-            'exec /private/var/ResizeAPFS/resize-helper --session --allow-writes --ui-path /private/var/ResizeAPFS/ResizeAPFS.app/ResizeAPFS'))
+    def test_the_helper_serves_the_app_in_the_session_folder_detached_from_ssh(self):
+        recorder = Recorder()
+        checkra1n_route.start_helper(checkra1n_route.Session(self.work, run=recorder))
+        script = recorder.commands[-1]
+        self.assertIn('/private/var/ResizeAPFS/resize-helper --session --allow-writes --ui-path /private/var/ResizeAPFS/ResizeAPFS.app/ResizeAPFS', script)
+        # A dropped SSH connection must not end the helper (Berkay, #10).
+        self.assertLess(script.index("trap '' HUP"), script.index('resize-helper'))
+        self.assertIn('</dev/null >/private/var/ResizeAPFS/helper.log 2>&1 & echo $! > /private/var/ResizeAPFS/helper.pid', script)
 
     def test_the_session_never_saves_a_host_key_or_offers_our_keys(self):
         session = checkra1n_route.Session(self.work, run=Recorder())

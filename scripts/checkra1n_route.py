@@ -41,6 +41,7 @@ SESSION = '/private/var/ResizeAPFS'
 APP = SESSION + '/ResizeAPFS.app'
 HELPER = SESSION + '/resize-helper'
 PIDFILE = SESSION + '/helper.pid'
+HELPER_LOG = SESSION + '/helper.log'
 # Where earlier releases put them; only possible on a writable system partition.
 OLD_APP = '/Applications/ResizeAPFS.app'
 OLD_SESSION = '/var/root/ResizeAPFS/session'
@@ -139,11 +140,13 @@ def install(session, app, helper):
     session.sh(f'{HELPER} --register-app {APP}', 'Adding the app to the home screen')
 
 
-def start_helper(session, popen=subprocess.Popen):
-    """The helper as root for this session; its process id goes to PIDFILE (exec keeps $$)."""
-    log = open(session.work / 'helper.log', 'wb')
-    return popen([*session.base, f'echo $$ > {PIDFILE}; exec {HELPER} --session --allow-writes --ui-path {APP}/ResizeAPFS'],
-                 env=session.env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+def start_helper(session):
+    """The helper as root for this session, detached from the SSH connection: a dropped
+    connection (a locked device that sleeps stops answering keepalives) must not take the
+    helper, and a running resize, with it. Its process id goes to PIDFILE, its output to
+    HELPER_LOG; `finish` or the next session's leftover cleanup stops it."""
+    session.sh(f"cd /; trap '' HUP; {HELPER} --session --allow-writes --ui-path {APP}/ResizeAPFS "
+               f'</dev/null >{HELPER_LOG} 2>&1 & echo $! > {PIDFILE}', 'Starting the helper')
 
 
 def busy(session):
@@ -151,12 +154,10 @@ def busy(session):
     return session.sh(f'{HELPER} --operation-active', 'Asking the helper', check=False).returncode == 0
 
 
-def finish(session, helper_process):
-    session.sh(f'if [ -f {PIDFILE} ]; then kill "$(cat {PIDFILE})" 2>/dev/null; rm -f {PIDFILE}; fi', 'Stopping the helper', check=False)
-    try:
-        helper_process.wait(timeout=20)
-    except subprocess.TimeoutExpired:
-        helper_process.kill()
+def finish(session):
+    session.sh(f'if [ -f {PIDFILE} ]; then pid="$(cat {PIDFILE})"; kill "$pid" 2>/dev/null; i=0; '
+               f'while kill -0 "$pid" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done; '
+               f'kill -9 "$pid" 2>/dev/null; rm -f {PIDFILE}; fi', 'Stopping the helper', check=False)
     session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app')
 
 
@@ -234,13 +235,13 @@ def run(executable, ask=input):
         try:
             remove_leftovers(session)
             install(session, app, helper)
-            process = start_helper(session)
+            start_helper(session)
             while True:
                 ask('Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. ')
                 if not busy(session):
                     break
                 print('A resize is still running. Wait until the app shows it has finished.')
-            finish(session, process)
+            finish(session)
             print('Removed.')
         finally:
             session.close()

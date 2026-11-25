@@ -31,6 +31,7 @@ public final class AppOpener: @unchecked Sendable {
                 return
             }
             var lastRegister = Date.distantPast
+            var lastOutcome = ""
             // Give up after ten minutes: the user can always open the app from the Home Screen.
             let deadline = Date().addingTimeInterval(600)
             while Date() < deadline {
@@ -49,7 +50,13 @@ public final class AppOpener: @unchecked Sendable {
                 }
                 let viaLaunchServices = open(identifier)
                 let viaSpringBoard = viaLaunchServices ? 0 : springBoardLaunch(identifier)
-                log("App opener: opening the app, LaunchServices \(viaLaunchServices), SpringBoard \(viaSpringBoard)")
+                // A locked device refuses every attempt (Berkay saw SpringBoard 3) until it is unlocked:
+                // log the outcome when it changes, not every second.
+                let outcome = "LaunchServices \(viaLaunchServices), SpringBoard \(viaSpringBoard)"
+                if outcome != lastOutcome {
+                    log("App opener: opening the app, \(outcome); retrying every second until the app runs")
+                    lastOutcome = outcome
+                }
             }
             log("App opener: gave up; the app stays on the Home Screen")
         }
