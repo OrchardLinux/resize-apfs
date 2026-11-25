@@ -179,6 +179,8 @@ final class AppModel {
                     }
                     self.snapshot = fresh; self.connectionOK = true; self.receivedAt = Date(); self.connectionMessage = nil
                     self.machine.receive(fresh)
+                    // The state now shows what became of the request.
+                    if self.error == Self.stopUnconfirmed, fresh.operation?.canStop != true { self.error = nil }
                     self.notify()
                 case .failure(let error):
                     self.connectionLost(error)
@@ -312,6 +314,7 @@ final class AppModel {
             }
         }
     }
+    private static let stopUnconfirmed = "Could not confirm the stop request. The resize continues unless this page says it is stopping."
     /// Stop the shrink after the step now running (the user confirmed). Asking again
     /// is harmless, so a lost answer only says so; the polled state shows the outcome.
     func stop() {
@@ -328,7 +331,7 @@ final class AppModel {
                     self.snapshot = fresh; self.connectionOK = true; self.receivedAt = Date(); self.connectionMessage = nil
                     self.machine.receive(fresh)
                 case .failure:
-                    self.error = "Could not confirm the stop request. The resize continues unless this page says it is stopping."
+                    self.error = Self.stopUnconfirmed
                 }
             }
         }
