@@ -156,8 +156,14 @@ copying the app before the first helper command and removing it after the last.
 `scripts/dopamine_route.py` runs the checkra1n route's session on a device jailbroken with
 [Dopamine](https://github.com/opa334/Dopamine), with the iOS 15+ payload (`out/device`). The
 launcher downloads the pinned `Dopamine.ipa` (3.0.13, ad-hoc signed) into Orchard's cache and
-asks the user to confirm two steps: Developer Mode is on, and they signed Dopamine with their
-own Apple ID and installed it. Releases never contain a team-signed Dopamine.
+asks the user to confirm Developer Mode is on. On a Mac, `scripts/sideload.py` then signs it with
+the account Xcode is signed in to: Xcode builds a one-file stub app with automatic signing for
+the connected device (registering it and making the profile), and the stub's profile,
+entitlements and certificate sign Dopamine under the same identifier
+(`dev.orchard.dopamine.<team>`, one App ID per team), which `devicectl` installs. The expiry
+is kept in Orchard's cache; a still-valid installed copy is not signed again. Without Xcode the
+user signs and installs it with a tool of their own. Signing happens only on the user's
+computer with their account; releases never contain a team-signed Dopamine.
 
 Dopamine's bootstrap (Procursus `bootstrap-ssh`, bundled in the app) installs OpenSSH under
 `/var/jb`, and Dopamine starts it with its other launch daemons after each jailbreak (port 22).

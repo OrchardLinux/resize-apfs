@@ -120,17 +120,43 @@ class ConnectTests(unittest.TestCase):
                                    open_session=lambda p: FakeSession(p, 'mine', error='Connection refused'))
 
 
+class FakeSigner:
+    def __init__(self, available):
+        self.is_available, self.calls = available, []
+
+    def available(self):
+        return self.is_available
+
+    def install(self, ipa, udid, ask):
+        self.calls.append((ipa, udid))
+
+
 class PrepareTests(unittest.TestCase):
-    def test_developer_mode_then_signing_are_confirmed_before_the_jailbreak(self):
+    def test_without_xcode_developer_mode_then_signing_are_confirmed(self):
         asked = []
         out = io.StringIO()
         with mock.patch('sys.stdout', out):
-            dopamine_route.prepare('/cache/files/sha256-abc', ask=asked.append)
+            dopamine_route.prepare('/cache/files/sha256-abc', ask=asked.append, signer=FakeSigner(False),
+                                   devices=lambda: self.fail('no device needed'))
         self.assertEqual(len(asked), 2)
         self.assertIn('Developer Mode', asked[0])
         self.assertIn('Sign Dopamine with your Apple ID', asked[1])
         self.assertIn('/cache/files/sha256-abc', asked[1])
         self.assertIn('tap Jailbreak', out.getvalue())
+
+    def test_with_xcode_the_launcher_signs_for_the_connected_device(self):
+        asked, signer = [], FakeSigner(True)
+        with mock.patch('sys.stdout', io.StringIO()):
+            dopamine_route.prepare('/ipa', ask=asked.append, signer=signer, devices=lambda: [(3, 'UDID-1')])
+        self.assertEqual(len(asked), 1)
+        self.assertIn('Developer Mode', asked[0])
+        self.assertEqual(signer.calls, [('/ipa', 'UDID-1')])
+
+    def test_exactly_one_device_must_be_connected(self):
+        with self.assertRaisesRegex(ValueError, 'No iOS device'):
+            dopamine_route.device(lambda: [])
+        with self.assertRaisesRegex(ValueError, 'More than one'):
+            dopamine_route.device(lambda: [(1, 'a'), (2, 'b')])
 
 
 class DopaminePinTests(unittest.TestCase):

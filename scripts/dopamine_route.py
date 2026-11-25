@@ -11,14 +11,17 @@ Dopamine trusts every program it sees started, so our ad-hoc signed iOS 15+ app 
 (out/device, the palera1n route's payload) run as they are. Install, helper and cleanup are
 the checkra1n route's (checkra1n_route.py), with its session folder on the data partition.
 
-Before the jailbreak, the user turns on Developer Mode and signs and installs the pinned
-Dopamine IPA with their own Apple ID; for now the launcher only asks them to confirm both.
+Before the jailbreak, the user confirms Developer Mode is on. On a Mac, the launcher then signs
+the pinned Dopamine IPA with the Apple ID Xcode is signed in to and installs it, after one
+confirmation (sideload.py); elsewhere it asks the user to sign and install it themselves.
 """
 import getpass
 import pathlib
 import tempfile
 
 import checkra1n_route
+import sideload
+import usbmux
 from image_format import require
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -39,6 +42,7 @@ HINT = (SERVER + ' did not answer: {}. Unlock the device and open Dopamine: if i
 DEVELOPER_MODE = ('Turn on Developer Mode on the device: Settings > Privacy & Security > Developer Mode, '
                   'then restart it and confirm "Turn On".\n'
                   'Press Enter when Developer Mode is on. ')
+# Without Xcode (Linux): the user signs and installs it with a tool of their own.
 SIGN = ('Sign Dopamine with your Apple ID and install it on the device, with Xcode, Sideloadly, '
         'AltStore or another sideloading tool. The app:\n'
         '  {}\n'
@@ -48,10 +52,21 @@ JAILBREAK = ('Open Dopamine on the device and tap Jailbreak. The device restarts
              'then unlock it.')
 
 
-def prepare(ipa, ask=input):
+def device(devices=usbmux.devices):
+    """The UDID of the one iOS device connected over USB."""
+    found = devices()
+    require(found, 'No iOS device is connected over USB. Connect the device, unlock it and trust this computer.')
+    require(len(found) == 1, 'More than one iOS device is connected. Connect only the device to resize.')
+    return found[0][1]
+
+
+def prepare(ipa, ask=input, signer=sideload, devices=usbmux.devices):
     """The steps on the device before the session, each confirmed by the user."""
     ask(DEVELOPER_MODE)
-    ask(SIGN.format(ipa))
+    if signer.available():
+        signer.install(ipa, device(devices), ask)
+    else:
+        ask(SIGN.format(ipa))
     print(JAILBREAK, flush=True)
 
 

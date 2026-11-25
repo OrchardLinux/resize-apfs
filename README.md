@@ -112,8 +112,10 @@ stays read-only and unchanged; nothing like checkra1n's "Install Cydia" is neede
 checkra1n is part of the release: the launcher downloads the pinned version.
 
 Without DFU (`./resize-apfs boot --dopamine`), the launcher asks you to turn on Developer
-Mode, then to sign the downloaded Dopamine with your Apple ID and install it (Xcode,
-Sideloadly, AltStore or similar). You open Dopamine and tap Jailbreak; the launcher then
+Mode. On a Mac it then signs the downloaded Dopamine with the Apple ID Xcode is signed in to
+(Xcode > Settings > Accounts) and installs it, after one confirmation; a free Apple ID signs
+it for 7 days, and the launcher signs it again when that runs out. Elsewhere, sign and install
+it yourself (Sideloadly, AltStore or similar). You open Dopamine and tap Jailbreak; the launcher then
 copies the app in over Dopamine's SSH server through the USB cable for one session, as on
 iOS 12 to 14, and removes it afterwards. After every restart of the device, tap Jailbreak
 again before the next session. No
