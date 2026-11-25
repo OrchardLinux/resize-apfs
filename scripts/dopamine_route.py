@@ -9,7 +9,9 @@ runs each command as root through Procursus's sudo.
 
 Dopamine trusts every program it sees started, so our ad-hoc signed iOS 15+ app and helper
 (out/device, the palera1n route's payload) run as they are. Install, helper and cleanup are
-the checkra1n route's (checkra1n_route.py), with its session folder on the data partition.
+the checkra1n route's (checkra1n_route.py), with one difference: iOS 15 and later starts apps
+only from inside the jailbreak root, so the app goes to its Applications folder; the helper
+stays in the session folder on the data partition.
 
 Before the jailbreak, the user confirms Developer Mode is on. On a Mac, the launcher then signs
 the pinned Dopamine IPA with the Apple ID Xcode is signed in to and installs it, after one
@@ -95,6 +97,15 @@ def connect(work, secret=getpass.getpass, open_session=None):
     return session
 
 
+def app_path(session):
+    """Where the app goes: the jailbreak root's Applications folder, as the kernel reports it.
+    iOS 15 and later starts apps only from inside the jailbreak root."""
+    real = session.sh(f'realpath {JBROOT}', 'Finding the jailbreak root').stdout
+    real = (real.decode() if isinstance(real, bytes) else real).strip()
+    require(real.startswith('/') and '\n' not in real and ' ' not in real, f'Unexpected jailbreak root: {real!r}')
+    return real + '/Applications/ResizeAPFS.app'
+
+
 def ssh_problem(udid=None, connect=None):
     return checkra1n_route.ssh_problem(udid, connect, port=SSH_PORT)
 
@@ -109,10 +120,11 @@ def run(ipa, ask=input):
     with tempfile.TemporaryDirectory(prefix='resize-apfs-', dir='/tmp') as work:
         session = connect(work)
         try:
-            checkra1n_route.remove_leftovers(session)
-            checkra1n_route.install(session, app, helper)
-            checkra1n_route.start_helper(session)
-            checkra1n_route.leave(session, ask)
+            target = app_path(session)
+            checkra1n_route.remove_leftovers(session, target)
+            checkra1n_route.install(session, app, helper, target)
+            checkra1n_route.start_helper(session, target)
+            checkra1n_route.leave(session, ask, app_path=target)
             print('Removed.')
         finally:
             session.close()

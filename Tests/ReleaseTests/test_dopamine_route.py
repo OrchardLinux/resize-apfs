@@ -88,6 +88,35 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(unwrap(recorder.commands[-1]).split('export PATH; ', 1)[1],
                          '/private/var/ResizeAPFS/resize-helper --register-app /private/var/ResizeAPFS/ResizeAPFS.app')
 
+    def test_the_app_goes_to_the_jailbreak_roots_applications_folder(self):
+        recorder = Recorder()
+        def run(argv, **kwargs):
+            recorder(argv, **kwargs)
+            out = b'/private/preboot/ABC/dopamine-x/procursus\n' if 'realpath /var/jb' in argv[-1] else b''
+            return subprocess.CompletedProcess(argv, 0, out, b'')
+        session = dopamine_route.session_for(self.work, 'alpine', run=run)
+        target = dopamine_route.app_path(session)
+        self.assertEqual(target, '/private/preboot/ABC/dopamine-x/procursus/Applications/ResizeAPFS.app')
+        checkra1n_route.install(session, self.app, self.helper, target)
+        checkra1n_route.start_helper(session, target)
+        scripts = [unwrap(c).split('export PATH; ', 1)[1] for c in recorder.commands]
+        self.assertIn(f'/private/var/ResizeAPFS/resize-helper --register-app {target}', scripts)
+        self.assertTrue(any(f'--ui-path {target}/ResizeAPFS' in s for s in scripts))
+        self.assertTrue(any(f'cat > {target}/ResizeAPFS && chmod 755' in s for s in scripts))
+        self.assertTrue(any('cat > /private/var/ResizeAPFS/resize-helper' in s for s in scripts), 'the helper stays in the session folder')
+
+    def test_cleanup_removes_the_app_from_the_jailbreak_root_too(self):
+        recorder = Recorder()
+        session = dopamine_route.session_for(self.work, 'alpine', run=recorder)
+        target = '/private/preboot/ABC/procursus/Applications/ResizeAPFS.app'
+        checkra1n_route.finish(session, target)
+        self.assertEqual(unwrap(recorder.commands[-1]).split('export PATH; ', 1)[1],
+                         f'/private/var/ResizeAPFS/resize-helper --unregister-app {target}; rm -rf {target} /private/var/ResizeAPFS')
+        recorder = Recorder()
+        checkra1n_route.remove_leftovers(dopamine_route.session_for(self.work, 'alpine', run=recorder), target)
+        script = unwrap(recorder.commands[0])
+        self.assertLess(script.index(target), script.index('/var/root/ResizeAPFS/session'), 'the new location first, while the helper is there')
+
     def test_the_server_is_named_in_errors(self):
         session = dopamine_route.session_for(self.work, 'alpine', run=lambda argv, **k: subprocess.CompletedProcess(argv, 255, '', 'refused'))
         with self.assertRaisesRegex(ValueError, "Dopamine's SSH server did not accept the connection: refused"):

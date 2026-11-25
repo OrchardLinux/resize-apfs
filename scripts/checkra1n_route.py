@@ -142,28 +142,30 @@ def leftover_script(session_folder, app):
             f'rm -rf {app} {session_folder}')
 
 
-def remove_leftovers(session):
+def remove_leftovers(session, app=APP):
     """Undo an earlier session that ended before its cleanup, also one from the old location
     (its own helper unregisters its app). Safe when there is none: removing a path that does
-    not exist succeeds on a read-only system partition too."""
-    session.sh(leftover_script(OLD_SESSION, OLD_APP) + '; ' + leftover_script(SESSION, APP), 'Removing an earlier session')
+    not exist succeeds on a read-only system partition too. `app`: where this route puts the
+    app, when not in the session folder; its leftover goes first, while the helper is there."""
+    scripts = ([leftover_script(SESSION, app)] if app != APP else []) + [leftover_script(OLD_SESSION, OLD_APP), leftover_script(SESSION, APP)]
+    session.sh('; '.join(scripts), 'Removing an earlier session')
 
 
-def install(session, app, helper):
+def install(session, app, helper, app_path=APP):
     # 755: the app runs as mobile and must read its bundle; the helper trusts it only while
     # nobody but root can change it.
     session.sh(f'umask 022; mkdir -p {SESSION} && chmod 755 {SESSION}', 'Preparing the session folder')
     session.put_file(helper, HELPER, 0o755)
-    session.put_tree(app, APP)
-    session.sh(f'{HELPER} --register-app {APP}', 'Adding the app to the home screen')
+    session.put_tree(app, app_path)
+    session.sh(f'{HELPER} --register-app {app_path}', 'Adding the app to the home screen')
 
 
-def start_helper(session):
+def start_helper(session, app_path=APP):
     """The helper as root for this session, detached from the SSH connection: a dropped
     connection (a locked device that sleeps stops answering keepalives) must not take the
     helper, and a running resize, with it. Its process id goes to PIDFILE, its output to
     HELPER_LOG; `finish` or the next session's leftover cleanup stops it."""
-    session.sh(f"cd /; trap '' HUP; {HELPER} --session --allow-writes --ui-path {APP}/ResizeAPFS "
+    session.sh(f"cd /; trap '' HUP; {HELPER} --session --allow-writes --ui-path {app_path}/ResizeAPFS "
                f'</dev/null >{HELPER_LOG} 2>&1 & echo $! > {PIDFILE}', 'Starting the helper')
 
 
@@ -179,7 +181,7 @@ def busy(session):
     return {0: True, 1: False}.get(code)
 
 
-def finish(session):
+def finish(session, app_path=APP):
     """Stop the helper and remove the app, unless a resize is running by then: the device
     script asks the helper again first (exit 3), so nothing is stopped mid-resize even if
     one started after the last check. 'busy', 'unanswered' (the device could not be reached;
@@ -196,7 +198,8 @@ def finish(session):
     if stopped.returncode != 0:
         return 'busy' if stopped.returncode == 3 else 'unanswered'
     try:
-        removed = session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app', check=False, timeout=90)
+        removed = session.sh(f'{HELPER} --unregister-app {app_path}; rm -rf {app_path if app_path != APP else ""} {SESSION}'.replace('  ', ' '),
+                             'Removing the app', check=False, timeout=90)
     except subprocess.TimeoutExpired:
         return 'unanswered'
     if removed.returncode == 255:
@@ -271,7 +274,7 @@ PROMPT = 'Resize APFS is on the Home Screen. Press Enter here when you are done 
 RETRY_SECONDS = 3
 
 
-def leave(session, ask, sleep=time.sleep):
+def leave(session, ask, sleep=time.sleep, app_path=APP):
     """After Enter: remove the app once the helper clearly says no resize runs. A device that
     does not answer is asked again every few seconds, without a time limit, so cleanup never
     follows silence; Ctrl-C ends the wait and removes nothing. A running resize asks for
@@ -280,7 +283,7 @@ def leave(session, ask, sleep=time.sleep):
     waiting = False
     while True:
         state = busy(session)
-        outcome = 'unanswered' if state is None else 'busy' if state else finish(session)
+        outcome = 'unanswered' if state is None else 'busy' if state else finish(session, app_path)
         if outcome == 'removed':
             return
         if outcome == 'unanswered':
