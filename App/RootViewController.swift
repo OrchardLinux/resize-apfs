@@ -151,6 +151,9 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
     func render() {
         guard isViewLoaded else { return }
         let m = metrics
+        // The screen stays on while the progress page is up: a device that goes to
+        // sleep holds up the resize (four long stalls in an iPhone XR's shrink).
+        UIApplication.shared.isIdleTimerDisabled = model.showsProgress
         // The page as it looks now, to animate away from when the state changes.
         let leaving = identity != pageIdentity && !pageIdentity.isEmpty && view.window != nil
         let previous = pageIdentity

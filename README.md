@@ -83,6 +83,7 @@ require root.
 ## While resizing
 
 Closing the app does not stop the operation. Reopen it to check the same operation.
+The screen stays on while the app shows a running resize.
 Do not restart the device or run another storage tool while it is working.
 
 Large shrinks run in steps (**Step 2 of about 5**). To shrink, APFS moves everything
