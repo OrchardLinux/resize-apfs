@@ -22,6 +22,7 @@ from image_format import require
 PALERA1N_RELEASE = 'https://github.com/palera1n/palera1n/releases/download/v3.0.0-beta.4'
 CHECKRA1N_RELEASE = 'https://assets.checkra.in/downloads'
 DOPAMINE_RELEASE = 'https://github.com/opa334/Dopamine/releases/download/3.0.13'
+XTOOL_RELEASE = 'https://github.com/xtool-org/xtool/releases/download/2.0.0-beta.2'
 
 # Kept identical to orchard2's crates/flow/src/assets.rs PALERA1N_PINS (v3.0.0-beta.4).
 # (tool, os, arch) -> pin. `member` is the executable inside the package. `bundle` keeps the
@@ -80,10 +81,27 @@ for _system in ('macos', 'linux'):
         PINS[('dopamine', _system, _arch)] = DOPAMINE
         for _version, _pin in BOOTSTRAP_SSH.items():
             PINS[('bootstrap-ssh-' + _version, _system, _arch)] = _pin
+# xtool 2.0.0-beta.2 signs Dopamine with the user's Apple ID and installs it (sideload.py).
+# The beta, not 1.24.0: it has the anisette crash fix (#422) and the provisioning-profile
+# conflict fix (#430) that re-signing every 7 days runs into; its Apple login already
+# sends the anisette provider's user agent (as omarchy-apple-dev's fork tests).
+PINS[('xtool', 'linux', 'arm64')] = dict(
+    url=XTOOL_RELEASE + '/xtool-aarch64.AppImage', size=65_292_808,
+    sha256='954da46b983f87596bf8500365b2b5458b27d5394f95c6ec579423bb690ec910', package='executable',
+    member=None, executable_sha256=None)
+PINS[('xtool', 'linux', 'x86_64')] = dict(
+    url=XTOOL_RELEASE + '/xtool-x86_64.AppImage', size=67_795_448,
+    sha256='512fce299d48b0c59e7bd32787a07ecd018d61a529ed17757b9019d709a667fd', package='executable',
+    member=None, executable_sha256=None)
+PINS[('xtool', 'macos', 'arm64')] = PINS[('xtool', 'macos', 'x86_64')] = dict(
+    url=XTOOL_RELEASE + '/xtool.app.zip', size=46_999_993,
+    sha256='93e780e4b4f96ba6d48b365bdfe9ae501f111f5dbb751a0d34b9e1317f5428db', package='zip',
+    member='xtool.app/Contents/MacOS/xtool', bundle=True,
+    executable_sha256='ebc400c1479accdd33da9f1905e11d0caaf400d0c087160ce916e4f243b06020')
 PINS[('palera1n', 'macos', 'x86_64')] = PINS[('palera1n', 'macos', 'arm64')]
 PINS[('checkra1n', 'macos', 'x86_64')] = PINS[('checkra1n', 'macos', 'arm64')]
 
-OVERRIDES = {'palera1n': 'PALERA1N', 'checkra1n': 'CHECKRA1N', 'dopamine': 'DOPAMINE'}
+OVERRIDES = {'palera1n': 'PALERA1N', 'checkra1n': 'CHECKRA1N', 'dopamine': 'DOPAMINE', 'xtool': 'XTOOL'}
 
 
 def host():
@@ -158,6 +176,11 @@ def unpack(package, pin, destination):
                 require(member.isfile(), 'The archive does not hold the expected executable.')
                 with archive.extractfile(member) as source, open(target, 'wb') as out:
                     shutil.copyfileobj(source, out)
+        elif pin['package'] == 'zip':
+            # A notarized macOS app: ditto keeps its links, modes and signature intact.
+            app = pin['member'].split('/', 1)[0]
+            target = work / app
+            subprocess.run(['ditto', '-x', '-k', str(package), str(work)], check=True, capture_output=True, timeout=300)
         else:
             app = pin['member'].split('/', 1)[0]
             target = work / (app if pin.get('bundle') else 'tool')

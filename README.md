@@ -25,10 +25,10 @@ also remove the `orig-fs` snapshot that keeps APFS from shrinking further.
 The launcher downloads the jailbreak it needs on first use, pinned by size and checksum:
 [palera1n 3.0.0 beta 4](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.4)
 for iOS 15 and later, [checkra1n 0.12.4](https://checkra.in/releases/0.12.4-beta) for
-iOS 12 to 14, [Dopamine 3.0.13](https://github.com/opa334/Dopamine/releases/tag/3.0.13) for the
-route without DFU. They are kept in Orchard's cache (`~/Library/Caches/orchard2` on macOS,
+iOS 12 to 14, [Dopamine 3.0.13](https://github.com/opa334/Dopamine/releases/tag/3.0.13) and
+[xtool 2.0.0-beta.2](https://github.com/xtool-org/xtool/releases/tag/2.0.0-beta.2) for the route without DFU. They are kept in Orchard's cache (`~/Library/Caches/orchard2` on macOS,
 `~/.cache/orchard2` on Linux), shared with the Orchard installer. To use your own build
-instead, set `PALERA1N`, `CHECKRA1N` or `DOPAMINE` to its path. On Apple Silicon, checkra1n needs
+instead, set `PALERA1N`, `CHECKRA1N`, `DOPAMINE` or `XTOOL` to its path. On Apple Silicon, checkra1n needs
 Rosetta. On Linux, the iOS 12-14 and Dopamine routes need the `usbmuxd` service.
 
 Tested on hardware:
@@ -111,16 +111,22 @@ through the USB cable for one session, then removes it. On both, the system part
 stays read-only and unchanged; nothing like checkra1n's "Install Cydia" is needed. Neither palera1n nor
 checkra1n is part of the release: the launcher downloads the pinned version.
 
+No Apple framework or firmware is bundled.
+
 Without DFU (`./resize-apfs boot --dopamine`), the launcher asks you to turn on Developer
-Mode. On a Mac it then signs the downloaded Dopamine with the Apple ID Xcode is signed in to
-(Xcode > Settings > Accounts) and installs it, after one confirmation; a free Apple ID signs
-it for 7 days, and the launcher signs it again when that runs out. Before Dopamine opens the
-first time, trust your Apple ID on the device (Settings > General > VPN & Device Management). Elsewhere, sign and install
-it yourself (Sideloadly, AltStore or similar). You open Dopamine and tap Jailbreak; the launcher then
-copies the app in over the SSH server the launcher adds to Dopamine's bootstrap, through the USB cable for one session, as on
-iOS 12 to 14, and removes it afterwards. After every restart of the device, tap Jailbreak
-again before the next session. No
-Apple framework or firmware is bundled.
+Mode, then signs the downloaded Dopamine with your Apple ID and installs it, after one
+confirmation. It uses [xtool](https://github.com/xtool-org/xtool) (downloaded like the
+jailbreaks), on Linux and macOS: the first time, xtool asks you to sign in (Apple ID, password,
+two-factor code) and keeps the session. A free Apple ID signs Dopamine for 7 days; the launcher
+signs it again when that runs out. Before Dopamine opens the first time, trust your Apple ID on
+the device (Settings > General > VPN & Device Management). You open Dopamine and tap Jailbreak;
+the launcher then copies the app in over the SSH server it adds to Dopamine's bootstrap, through
+the USB cable for one session, as on iOS 12 to 14, and removes it afterwards. After every
+restart of the device, tap Jailbreak again before the next session.
+
+Apple's sign-in needs device-identity data ("anisette"), which xtool gets from the SideStore
+project's Omnisette server, as free sideloading tools do; your password and two-factor code
+go only to Apple.
 
 ## Development
 

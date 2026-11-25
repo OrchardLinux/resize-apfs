@@ -13,9 +13,10 @@ the checkra1n route's (checkra1n_route.py), with one difference: iOS 15 and late
 only from inside the jailbreak root, so the app goes to its Applications folder; the helper
 stays in the session folder on the data partition.
 
-Before the jailbreak, the user confirms Developer Mode is on. On a Mac, the launcher then signs
-the pinned Dopamine IPA with the Apple ID Xcode is signed in to and installs it, after one
-confirmation (sideload.py); elsewhere it asks the user to sign and install it themselves.
+Before the jailbreak, the user confirms Developer Mode is on. The launcher then signs the
+pinned Dopamine IPA with the user's Apple ID through xtool and installs it, after one
+confirmation (sideload.py); where xtool has no release, it asks the user to sign and install
+it themselves.
 """
 import getpass
 import pathlib
@@ -45,7 +46,7 @@ HINT = (SERVER + ' did not answer: {}. Unlock the device and open Dopamine: if i
 DEVELOPER_MODE = ('Turn on Developer Mode on the device: Settings > Privacy & Security > Developer Mode, '
                   'then restart it and confirm "Turn On".\n'
                   'Press Enter when Developer Mode is on. ')
-# Without Xcode (Linux): the user signs and installs it with a tool of their own.
+# Where xtool has no release: the user signs and installs it with a tool of their own.
 SIGN = ('Sign Dopamine with your Apple ID and install it on the device, with Xcode, Sideloadly, '
         'AltStore or another sideloading tool. The app:\n'
         '  {}\n'

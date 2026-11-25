@@ -156,14 +156,14 @@ copying the app before the first helper command and removing it after the last.
 `scripts/dopamine_route.py` runs the checkra1n route's session on a device jailbroken with
 [Dopamine](https://github.com/opa334/Dopamine), with the iOS 15+ payload (`out/device`). The
 launcher downloads the pinned `Dopamine.ipa` (3.0.13, ad-hoc signed) into Orchard's cache and
-asks the user to confirm Developer Mode is on. On a Mac, `scripts/sideload.py` then signs it with
-the account Xcode is signed in to: Xcode builds a one-file stub app with automatic signing for
-the connected device (registering it and making the profile), and the stub's profile,
-entitlements and certificate sign Dopamine under the same identifier
-(`dev.orchard.dopamine.<team>`, one App ID per team), which `devicectl` installs. The expiry
-is kept in Orchard's cache; a still-valid installed copy is not signed again. Without Xcode the
-user signs and installs it with a tool of their own. Signing happens only on the user's
-computer with their account; releases never contain a team-signed Dopamine.
+asks the user to confirm Developer Mode is on. `scripts/sideload.py` then signs and installs it
+with the pinned xtool (2.0.0-beta.2; AppImage on Linux, notarized app on macOS, run with
+`XTL_CLI=1`): `xtool auth login` once, in the user's terminal, then `xtool install --usb --udid`,
+which registers the device, makes the App ID (`XTL-<account>.com.opa334.Dopamine`, the same on
+every signing) and profile, signs and installs. The expiry is kept in Orchard's cache; a
+still-valid copy is not signed again (on a Mac, devicectl also confirms it is still installed).
+Signing happens only on the user's computer with their account; releases never contain a
+team-signed Dopamine.
 
 Dopamine unpacks the Procursus bootstrap bundled in the app (`bootstrap_<version>.tar.zst`) on a
 device's first jailbreak, without checking it. Its own copy has no SSH server, so before signing,
