@@ -31,6 +31,7 @@ public final class DeviceEngine: @unchecked Sendable {
     /// The system snapshot's last scanned state. The on-disk scan is expensive,
     /// so refresh repeats it at most once a minute; other inspections keep it.
     private var systemSnapshot: SystemSnapshot?
+    private var snapshotVolumes: [SnapshotVolume]?
     private var snapshotScannedAt: Date?
 
     public init(source: DeviceSource, directory: URL, executable: String) throws {
@@ -74,13 +75,13 @@ public final class DeviceEngine: @unchecked Sendable {
         let result: Result<DeviceInspection, Error>
         do {
             var latest = try DeviceInspector.inspect(source, queryMinimum: flags.minimum)
-            if flags.snapshots { latest.layout.systemSnapshot = SystemSnapshots.inspect(source, latest) }
+            if flags.snapshots { SystemSnapshots.fill(source, &latest) }
             result = .success(latest)
         } catch { result = .failure(error) }
         sync {
             switch result {
             case .success(let latest):
-                if flags.snapshots { systemSnapshot = latest.layout.systemSnapshot; snapshotScannedAt = Date() }
+                if flags.snapshots { systemSnapshot = latest.layout.systemSnapshot; snapshotVolumes = latest.layout.snapshotVolumes; snapshotScannedAt = Date() }
                 accept(latest)
                 if inheritedOperation, var saved = record {
                     let result = saved.workerJob.flatMap { try? Data(contentsOf: DeviceWorker.resultURL(for: $0)) }
@@ -195,7 +196,7 @@ public final class DeviceEngine: @unchecked Sendable {
         defer { sync { snapshotting = false } }
         let source = source
         var fresh = try DeviceInspector.inspect(source)
-        fresh.layout.systemSnapshot = SystemSnapshots.inspect(source, fresh)
+        SystemSnapshots.fill(source, &fresh)
         guard fresh.layout.revision == request.revision else { throw ResizeError("Storage changed. Inspect it again; the snapshot was not changed.") }
         guard let system = fresh.layout.systemSnapshot, system.name == request.name else {
             throw ResizeError("The snapshot \(request.name) could not be checked. It was not changed.")
@@ -217,9 +218,9 @@ public final class DeviceEngine: @unchecked Sendable {
         // The snapshot changed what APFS can shrink to: ask again.
         DeviceInspector.forgetMinimum()
         var after = try DeviceInspector.inspect(source)
-        after.layout.systemSnapshot = SystemSnapshots.inspect(source, after)
+        SystemSnapshots.fill(source, &after)
         return try sync {
-            systemSnapshot = after.layout.systemSnapshot; snapshotScannedAt = Date()
+            systemSnapshot = after.layout.systemSnapshot; snapshotVolumes = after.layout.snapshotVolumes; snapshotScannedAt = Date()
             accept(after)
             return try currentSnapshot()
         }
@@ -499,6 +500,7 @@ public final class DeviceEngine: @unchecked Sendable {
         guard inspection == nil || latest.observedAt >= inspection!.observedAt else { return }
         inspection = latest
         if inspection?.layout.systemSnapshot == nil { inspection?.layout.systemSnapshot = systemSnapshot }
+        if inspection?.layout.snapshotVolumes == nil { inspection?.layout.snapshotVolumes = snapshotVolumes }
         record?.operation.observedCapacityBytes = latest.layout.containerBytes
         record?.operation.observedAt = latest.observedAt
     }

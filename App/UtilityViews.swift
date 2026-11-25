@@ -40,6 +40,18 @@ final class TechnicalViewController: ThemedTableController {
                                 ("Backing capacity", "\(layout.backingBytes) bytes"),
                                 ("Minimum APFS size", layout.minimumContainerBytes.map { "\($0) bytes" + (isMock ? " (mock fixture)" : " (APFS API)") } ?? "Unavailable")]),
         ]
+        // iOS 12-14: every volume's snapshots, so a tester's screenshot shows which one
+        // keeps APFS from shrinking. The full name is the value (long press copies it).
+        if let volumes = layout.snapshotVolumes {
+            sections.append(("Snapshots", volumes.flatMap { volume -> [(String, String)] in
+                guard !volume.snapshots.isEmpty else { return [(volume.volume, "No snapshots")] }
+                return volume.snapshots.map { entry in
+                    let held = entry.heldBytes.map { "holds \(Capacity.gb($0))" } ?? "holds unknown"
+                    let marks = SnapshotVolume.markers(entry)
+                    return ([volume.volume, marks.isEmpty ? nil : marks, held].compactMap { $0 }.joined(separator: " · "), entry.name)
+                }
+            }))
+        }
         for partition in layout.partitions {
             sections.append((partition.name, [("Device", partition.bsdName), ("Unique GUID", partition.id.uuidString), ("Type GUID", partition.typeGUID),
                                               ("First LBA", "\(partition.firstLBA)"), ("Last LBA", "\(partition.lastLBA) (inclusive)"),

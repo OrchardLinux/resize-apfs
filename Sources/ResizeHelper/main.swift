@@ -157,6 +157,20 @@ do {
         try AppRegistration.unregister(app)
         exit(0)
     }
+    // Diagnostics: every APFS volume's snapshots with their boot and revert markers
+    // and the space each holds, as the app's Technical details show them. Read-only.
+    if CommandLine.arguments.contains("--snapshots") {
+        let source = DeviceSource(path: "/dev/disk0", writesEnabled: false)
+        var inspection = try DeviceInspector.inspect(source)
+        SystemSnapshots.fill(source, &inspection)
+        print("APFS container \(inspection.layout.apfs.bsdName): \(Capacity.gb(inspection.layout.containerBytes)), minimum \(inspection.layout.minimumContainerBytes.map(Capacity.gb) ?? "unknown")")
+        guard let volumes = inspection.layout.snapshotVolumes else {
+            print("Snapshots could not be read (only iOS 12-14 devices report them).")
+            exit(1)
+        }
+        print(SnapshotVolume.describe(volumes), terminator: "")
+        exit(0)
+    }
     // Testing only, not part of a route: ask the kernel to read disk0's GPT again and
     // report the partition's size before and after. Changes nothing on disk.
     if let partition = argument("--reprobe") {

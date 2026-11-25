@@ -75,10 +75,25 @@ public enum SystemSnapshots {
         }
     }
 
-    /// The full state for a fresh inspection, or nil where there is none to manage.
-    public static func inspect(_ source: DeviceSource, _ inspection: DeviceInspection) -> SystemSnapshot? {
-        guard applicable, !source.isFixture, let names = mounted() else { return nil }
-        let report = names.contains(name) ? try? report(source, inspection) : nil
-        return state(mounted: names, report: report, minimumBytes: inspection.layout.minimumContainerBytes)
+    /// Sets orig-fs's state and the list of every volume's snapshots on a fresh
+    /// inspection; leaves both nil where there is nothing to manage.
+    public static func fill(_ source: DeviceSource, _ inspection: inout DeviceInspection) {
+        inspection.layout.systemSnapshot = nil
+        inspection.layout.snapshotVolumes = nil
+        guard applicable, !source.isFixture, let names = mounted() else { return }
+        let report = try? report(source, inspection)
+        let minimum = inspection.layout.minimumContainerBytes
+        inspection.layout.systemSnapshot = state(mounted: names, report: report, minimumBytes: minimum)
+        inspection.layout.snapshotVolumes = report.map { volumes($0, minimumBytes: minimum) }
+    }
+
+    /// Every volume and its snapshots, for Technical details.
+    public static func volumes(_ report: APFSSnapshotReport, minimumBytes: Int64?) -> [SnapshotVolume] {
+        report.volumes.map { volume in
+            SnapshotVolume(volume: volume.name, role: volume.roleName, snapshots: volume.snapshots.map { snapshot in
+                SnapshotVolume.Entry(name: snapshot.name, bootsFrom: snapshot.isRootTo, revertsTo: snapshot.isRevertTo,
+                                     heldBytes: heldBytes(by: snapshot, in: volume, report: report, minimumBytes: minimumBytes))
+            })
+        }
     }
 }

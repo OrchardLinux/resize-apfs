@@ -65,6 +65,49 @@ public struct SystemSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// Every APFS volume's snapshots, read from the on-disk metadata, for Technical
+/// details. Diagnostic only: nothing is decided from it.
+public struct SnapshotVolume: Codable, Equatable, Sendable {
+    public struct Entry: Codable, Equatable, Sendable {
+        public var name: String
+        /// The volume's boot (root_to) marker points at it: iOS mounts it as the system.
+        public var bootsFrom: Bool
+        /// The volume's revert (revert_to) marker points at it.
+        public var revertsTo: Bool
+        /// How much it raises APFS's minimum size; nil when it cannot be estimated.
+        public var heldBytes: Int64?
+        public init(name: String, bootsFrom: Bool, revertsTo: Bool, heldBytes: Int64?) {
+            self.name = name; self.bootsFrom = bootsFrom; self.revertsTo = revertsTo; self.heldBytes = heldBytes
+        }
+    }
+    public var volume: String
+    public var role: String
+    public var snapshots: [Entry]
+    public init(volume: String, role: String, snapshots: [Entry]) {
+        self.volume = volume; self.role = role; self.snapshots = snapshots
+    }
+
+    /// What a snapshot's markers mean, in the app's words ("" for none).
+    public static func markers(_ entry: Entry) -> String {
+        [entry.bootsFrom ? "boots from" : nil, entry.revertsTo ? "reverts to" : nil].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// One line per snapshot (or "(none)" per volume), for the helper's --snapshots.
+    public static func describe(_ volumes: [SnapshotVolume]) -> String {
+        var text = ""
+        for volume in volumes {
+            let title = ["", "None", volume.volume].contains(volume.role) ? volume.volume : "\(volume.volume) (\(volume.role))"
+            if volume.snapshots.isEmpty { text += "\(title)  (none)\n"; continue }
+            for entry in volume.snapshots {
+                let marks = markers(entry)
+                let held = entry.heldBytes.map { "holds \(Capacity.gb($0))" } ?? "holds unknown"
+                text += "\(title)  \(entry.name)  \(marks.isEmpty ? "-" : marks)  \(held)\n"
+            }
+        }
+        return text
+    }
+}
+
 public struct StorageLayout: Codable, Equatable, Sendable {
     public var revision: UUID
     public var diskID: UUID
@@ -85,6 +128,8 @@ public struct StorageLayout: Codable, Equatable, Sendable {
     public var issue: String?
     /// Absent in records written before snapshots were reported.
     public var systemSnapshot: SystemSnapshot?
+    /// All volumes' snapshots (iOS 12-14 devices only); nil where not read.
+    public var snapshotVolumes: [SnapshotVolume]?
 
     public var apfs: Partition { partitions.first { $0.id == backingPartitionID }! }
     public var backingBytes: Int64 { apfs.blocks * sectorSize }
@@ -157,7 +202,7 @@ public struct StorageLayout: Codable, Equatable, Sendable {
                                         firstLBA: alignUp(partitionEnd + 1, to: 8), lastLBA: last,
                                         typeGUID: linuxTypeGUID, contents: "Unformatted (simulated)"))
         }
-        return StorageLayout(revision: UUID(), diskID: UUID(uuidString: "00000000-0000-0000-0000-000000000099")!,
+        var layout = StorageLayout(revision: UUID(), diskID: UUID(uuidString: "00000000-0000-0000-0000-000000000099")!,
                              diskName: "disk0", deviceName: "Simulated storage", sectorSize: sector,
                              totalBlocks: 7_812_500, firstUsableLBA: 6, lastUsableLBA: last,
                              partitions: partitions, containerID: UUID(uuidString: "00000000-0000-0000-0000-000000000088")!,
@@ -166,6 +211,17 @@ public struct StorageLayout: Codable, Equatable, Sendable {
                              issue: scenario == .invalidLayout ? "The simulated primary and backup GPT disagree." : nil,
                              systemSnapshot: snapshotted ? SystemSnapshot(present: true, removable: scenario == .snapshot,
                                                                           heldBytes: scenario == .snapshot ? 10_100_000_000 : nil) : nil)
+        if snapshotted {
+            layout.snapshotVolumes = mockSnapshotVolumes(orig: SnapshotVolume.Entry(name: "orig-fs", bootsFrom: scenario != .snapshot, revertsTo: false,
+                                                                                   heldBytes: scenario == .snapshot ? 10_100_000_000 : nil))
+        }
+        return layout
+    }
+
+    /// The mock's Technical details list: orig-fs (or none) on System, Data without snapshots.
+    public static func mockSnapshotVolumes(orig: SnapshotVolume.Entry?) -> [SnapshotVolume] {
+        [SnapshotVolume(volume: "System", role: "System", snapshots: orig.map { [$0] } ?? []),
+         SnapshotVolume(volume: "Data", role: "None", snapshots: [])]
     }
 }
 

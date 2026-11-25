@@ -82,6 +82,7 @@ public actor MockEngine {
         }
         guard system.removable else { throw ResizeError("iOS marked \(system.name) as the snapshot to revert to. It was not removed.") }
         record.layout.systemSnapshot = SystemSnapshot(name: system.name, present: false, removable: false)
+        record.layout.snapshotVolumes = StorageLayout.mockSnapshotVolumes(orig: nil)
         record.layout.minimumContainerBytes = alignDown(19_500_000_000, to: record.layout.sectorSize)
         record.layout.revision = UUID()
         try save()
@@ -96,6 +97,7 @@ public actor MockEngine {
         }
         // A new snapshot references what is allocated now; the minimum stays.
         record.layout.systemSnapshot = SystemSnapshot(name: system.name, present: true, removable: true, heldBytes: 0)
+        record.layout.snapshotVolumes = StorageLayout.mockSnapshotVolumes(orig: SnapshotVolume.Entry(name: system.name, bootsFrom: false, revertsTo: false, heldBytes: 0))
         record.layout.revision = UUID()
         try save()
         return try snapshot(at: now, allowOutage: false)

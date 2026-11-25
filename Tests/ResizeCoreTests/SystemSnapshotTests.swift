@@ -71,4 +71,24 @@ final class SystemSnapshotTests: XCTestCase {
         XCTAssertTrue(state.removable)
         XCTAssertNil(state.heldBytes)
     }
+
+    /// Perry's case: orig-fs holds little, the booted update snapshot sets the limit.
+    /// The list shows every volume's snapshots with their markers and held space.
+    func testListShowsEverySnapshotWithMarkersAndHeldSpace() throws {
+        let r = report([volume("System", role: 1, oid: 1, live: 4_700_000, snapshots: [
+                            snap("com.apple.os.update-8F2A", tidemark: 7_200_000, rootTo: true),
+                            snap("orig-fs", tidemark: 4_720_000)]),
+                        volume("Data", role: 0, oid: 2, live: 4_600_000, snapshots: [])])
+        let volumes = SystemSnapshots.volumes(r, minimumBytes: minimum)
+        XCTAssertEqual(volumes.map(\.volume), ["System", "Data"])
+        let update = volumes[0].snapshots[0], orig = volumes[0].snapshots[1]
+        XCTAssertTrue(update.bootsFrom); XCTAssertFalse(update.revertsTo)
+        XCTAssertGreaterThan(try XCTUnwrap(update.heldBytes), 9_000_000_000)
+        XCTAssertEqual(orig.heldBytes, 0, "the update snapshot reaches further, so orig-fs sets no limit")
+        XCTAssertTrue(volumes[1].snapshots.isEmpty)
+        let text = SnapshotVolume.describe(volumes)
+        XCTAssertTrue(text.contains("com.apple.os.update-8F2A  boots from  holds "), text)
+        XCTAssertTrue(text.contains("orig-fs  -  holds 0 GB"), text)
+        XCTAssertTrue(text.contains("Data  (none)"), text)
+    }
 }
