@@ -71,6 +71,15 @@ public actor MockEngine {
         return try snapshot(at: now, allowOutage: false)
     }
 
+    /// As on the device: taken between two steps, ignored on the last one.
+    public func stop(_ request: StopRequest, at now: Date = Date()) throws -> ServiceSnapshot {
+        if let op = record.operation, op.id == request.operationID, op.canStop {
+            record.operation?.stopRequested = true
+            try save()
+        }
+        return try snapshot(at: now, allowOutage: false)
+    }
+
     /// As on the device: refused while an operation is active, for a stale view,
     /// or for a snapshot iOS needs; afterwards the minimum is what the APFS
     /// query reports without it (here the iPod touch's 19.5 GB).
@@ -120,6 +129,12 @@ public actor MockEngine {
     public func tick(at now: Date = Date()) throws {
         guard var op = record.operation, op.isActive, let step = op.currentStep else { return }
         // A shrink runs in steps sized from a spread-out space map, as on the device.
+        if step == .shrinkAPFS && op.apfsStep == nil && op.stopRequested == true {
+            op.endStopped(on: record.layout, steps: 0)
+            record.operation = op
+            try save()
+            return
+        }
         if step == .shrinkAPFS && op.apfsStep?.fromBytes != record.layout.containerBytes {
             let number = (op.apfsStep?.number ?? 0) + 1
             op.apfsStep = mockShrinkStep(number: number, previous: op.apfsStep == nil ? nil : 6, final: op.plan.targetBytes)
@@ -158,6 +173,7 @@ public actor MockEngine {
                 record.layout.revision = UUID()
                 op.observedCapacityBytes = record.layout.containerBytes
                 op.stepStartedAt = now
+                if op.stopRequested == true { op.endStopped(on: record.layout, steps: op.apfsStep!.number) }
                 record.operation = op
                 try save()
                 return

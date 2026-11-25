@@ -133,6 +133,7 @@ public struct LocalSocketResizeService: ResizeService {
     public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { transport.exchange("snapshot", body: nil, completion: completion) }
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { call("plan", encoding: request, completion: completion) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { call("start", encoding: request, completion: completion) }
+    public func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { call("stop", encoding: request, completion: completion) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) {
         completion(.failure(ResizeError("Mock configuration is not available on a device.")))
     }

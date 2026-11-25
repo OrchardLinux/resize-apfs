@@ -303,6 +303,27 @@ final class AppModel {
             }
         }
     }
+    /// Stop the shrink after the step now running (the user confirmed). Asking again
+    /// is harmless, so a lost answer only says so; the polled state shows the outcome.
+    func stop() {
+        guard let operation, operation.canStop, !busy else { return }
+        busy = true; error = nil
+        notify()
+        service.stop(StopRequest(operationID: operation.id)) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                defer { self.busy = false; self.notify() }
+                switch result {
+                case .success(let fresh):
+                    if let current = self.snapshot, fresh.capturedAt < current.capturedAt { return }
+                    self.snapshot = fresh; self.connectionOK = true; self.receivedAt = Date(); self.connectionMessage = nil
+                    self.machine.receive(fresh)
+                case .failure:
+                    self.error = "Could not confirm the stop request. The resize continues unless this page says it is stopping."
+                }
+            }
+        }
+    }
     func done() {
         guard let operation else { return }
         do {

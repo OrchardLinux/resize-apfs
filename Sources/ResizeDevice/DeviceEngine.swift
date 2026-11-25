@@ -179,6 +179,21 @@ public final class DeviceEngine: @unchecked Sendable {
         }
     }
 
+    /// Asks a stepwise shrink to end after the step now running. A request that no
+    /// longer applies (the last step runs, or the operation ended) changes nothing;
+    /// the answer shows which. Nothing is written here: while a step runs, APFS may
+    /// hold the filesystem, and a write would keep status requests waiting with it.
+    /// The next journal write records the request, and a helper that dies before
+    /// that starts no further step anyway.
+    public func stop(_ request: StopRequest) throws -> ServiceSnapshot {
+        try sync {
+            if let operation = record?.operation, operation.id == request.operationID, operation.canStop {
+                record?.operation.stopRequested = true
+            }
+            return try currentSnapshot()
+        }
+    }
+
     public func removeSnapshot(_ request: SnapshotRequest) throws -> ServiceSnapshot { try changeSnapshot(request, remove: true) }
     public func takeSnapshot(_ request: SnapshotRequest) throws -> ServiceSnapshot { try changeSnapshot(request, remove: false) }
 
@@ -348,6 +363,10 @@ public final class DeviceEngine: @unchecked Sendable {
         var number = 0
         var previousSeconds: Double?
         while before.layout.containerBytes > plan.targetBytes {
+            if sync({ record?.operation.stopRequested == true }) {
+                try endStopped(saved, before: before, steps: number)
+                return false
+            }
             if number > 0 {
                 sleep(ShrinkSteps.pauseSeconds)
                 let rested = try DeviceInspector.inspect(source, queryMinimum: false)
@@ -359,18 +378,26 @@ public final class DeviceEngine: @unchecked Sendable {
             }
             let map = DeviceInspector.spaceMap(source, matching: before)
             let target = ShrinkSteps.nextTarget(from: before.layout.containerBytes, to: plan.targetBytes, map: map, budget: budget)
-            number += 1
-            let progress = APFSStepProgress(number: number,
-                                            plannedCount: number + ShrinkSteps.count(from: target, to: plan.targetBytes, map: map, budget: budget),
+            let progress = APFSStepProgress(number: number + 1,
+                                            plannedCount: number + 1 + ShrinkSteps.count(from: target, to: plan.targetBytes, map: map, budget: budget),
                                             fromBytes: before.layout.containerBytes, targetBytes: target,
                                             dataBudgetBytes: map == nil ? nil : budget, previousCallSeconds: previousSeconds)
-            try sync {
+            // One locked step: a stop is either seen here, before the step exists, or
+            // asked for while the step shown to the user is this one.
+            let stopping: Bool = try sync {
                 guard let current = record, current.operation.id == saved.operation.id else { throw ResizeError("Operation ownership changed.") }
+                if current.operation.stopRequested == true { return true }
                 accept(before)
                 record?.operation.apfsStep = progress
                 record?.operation.stepStartedAt = Date()
                 try persist()
+                return false
             }
+            if stopping {
+                try endStopped(saved, before: before, steps: number)
+                return false
+            }
+            number += 1
             let job = DeviceJob(source: source, step: .shrinkAPFS, plan: plan, expectedGPT: before.gpt,
                                 expectedContainerBytes: before.layout.containerBytes, apfsTargetBytes: target)
             let began = ProcessInfo.processInfo.systemUptime
@@ -405,6 +432,25 @@ public final class DeviceEngine: @unchecked Sendable {
             try completeStep(.shrinkAPFS)
         }
         return true
+    }
+
+    /// Ends the shrink between two steps, as the user asked: the layout is inspected
+    /// once more and must still be what the last step left.
+    private func endStopped(_ saved: Record, before: DeviceInspection, steps: Int) throws {
+        let source = source
+        DeviceInspector.forgetMinimum()
+        let final = try DeviceInspector.inspect(source)
+        guard final.gpt == before.gpt, final.layout.containerBytes == before.layout.containerBytes,
+              final.layout.containerID == before.layout.containerID else {
+            throw ResizeError("Storage changed after the last APFS shrink step. No further step was started.")
+        }
+        try sync {
+            guard let current = record, current.operation.id == saved.operation.id else { throw ResizeError("Operation ownership changed.") }
+            snapshotScannedAt = nil
+            accept(final)
+            record?.operation.endStopped(on: final.layout, steps: steps)
+            try persist()
+        }
     }
 
     /// Caller holds the lock.

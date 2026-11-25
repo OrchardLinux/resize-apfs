@@ -45,6 +45,10 @@ enum Theme {
     static let scrim = UIColor(hex: 0x0D0E14, alpha: 0.7)
     /// The part of APFS held by a removable snapshot: the allocated blue at 40 %.
     static let snapshot = UIColor(hex: 0x7AA2F7, alpha: 0.4)
+    /// The part of the progress bar the running step will fill.
+    static let stepRunning = UIColor(hex: 0x7AA2F7, alpha: 0.35)
+    /// The line around a quiet button.
+    static let quietBorder = foreground.withAlphaComponent(0.4)
 
     /// JetBrains Mono at the design size, scaled with Dynamic Type.
     static func font(_ size: CGFloat, _ weight: UIFont.Weight = .regular, _ style: UIFont.TextStyle = .body) -> UIFont {
@@ -110,7 +114,7 @@ extension UIColor {
 /// Line icons on a 24-point grid, drawn as template images.
 enum Icon {
     case chevronLeft, chevronRight, arrowRight, check, checkCircle, circle, circleDot, square, squareCheck
-    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, history
+    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, circleStop, history
 
     func image(_ size: CGFloat = 20, lineWidth: CGFloat = 2) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
@@ -133,6 +137,8 @@ enum Icon {
                 stroke(circle(CGPoint(x: 12, y: 12), 10)); line([CGPoint(x: 8, y: 12), CGPoint(x: 11, y: 15), CGPoint(x: 16, y: 9)])
             case .circle: stroke(circle(CGPoint(x: 12, y: 12), 10))
             case .circleDot: stroke(circle(CGPoint(x: 12, y: 12), 10)); circle(CGPoint(x: 12, y: 12), 4.5).fill()
+            case .circleStop:
+                stroke(circle(CGPoint(x: 12, y: 12), 10)); stroke(UIBezierPath(roundedRect: CGRect(x: 9, y: 9, width: 6, height: 6), cornerRadius: 1))
             case .square: stroke(UIBezierPath(roundedRect: CGRect(x: 3, y: 3, width: 18, height: 18), cornerRadius: 3))
             case .squareCheck:
                 UIBezierPath(roundedRect: CGRect(x: 2, y: 2, width: 20, height: 20), cornerRadius: 4).fill()

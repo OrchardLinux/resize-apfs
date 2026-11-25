@@ -195,7 +195,8 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         let editing = [model.targetText, model.freeText, model.targetBytes.map(String.init) ?? "-", "\(model.createLinux)", "\(model.eraseFollowing)", model.reviewedPlan?.id.uuidString ?? "-"]
         let page = ([model.state.rawValue, model.error ?? "-", "\(model.busy)", "\(model.connectionOK)", model.connectionMessage ?? "-", encoded] + editing).joined(separator: "|")
         let footer = [model.state.rawValue, model.error ?? "-", "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
-                      model.operation?.status.rawValue ?? "-"].joined(separator: "|")
+                      model.operation?.status.rawValue ?? "-", model.operation?.currentStep?.rawValue ?? "-",
+                      "\(model.operation?.onLastShrinkStep == true)", "\(model.operation?.stopRequested == true)"].joined(separator: "|")
         return (page, footer)
     }
 
@@ -247,6 +248,12 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
             ? "Apply the changes you reviewed? This simulator build changes mock storage only."
             : "Apply these changes to internal storage? Keep power connected and do not restart until the result is verified."
         present(DialogController(title: "Start resizing?", message: message, action: "Start resize") { [weak self] in self?.model.apply() }, animated: true)
+    }
+    func confirmStop() {
+        guard let operation = model.operation, operation.canStop else { return }
+        present(DialogController(title: "Stop resizing?",
+                                 message: "The current step finishes first. APFS keeps the size it has then and the partition stays \(Capacity.gb(operation.plan.before.backingBytes)). You can continue or grow APFS back later.",
+                                 action: "Stop", cancel: "Keep resizing") { [weak self] in self?.model.stop() }, animated: true)
     }
     func confirmRemoveSnapshot() {
         guard let name = model.layout?.systemSnapshot?.name else { return }

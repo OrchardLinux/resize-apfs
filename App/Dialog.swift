@@ -1,18 +1,19 @@
 import UIKit
 
 /// A confirmation in the app's look. UIAlertController is always light on iOS 12,
-/// so the two confirmations (start resizing, remove the snapshot) use this
+/// so the confirmations (start or stop resizing, remove the snapshot) use this
 /// instead: the installer's dialog over a Tokyo Night scrim, Cancel and the
 /// action side by side.
 final class DialogController: UIViewController {
     private let titleText: String
     private let message: String
     private let actionTitle: String
+    private let cancelTitle: String
     private let destructive: Bool
     private let onConfirm: () -> Void
 
-    init(title: String, message: String, action: String, destructive: Bool = true, onConfirm: @escaping () -> Void) {
-        titleText = title; self.message = message; actionTitle = action; self.destructive = destructive; self.onConfirm = onConfirm
+    init(title: String, message: String, action: String, cancel: String = "Cancel", destructive: Bool = true, onConfirm: @escaping () -> Void) {
+        titleText = title; self.message = message; actionTitle = action; cancelTitle = cancel; self.destructive = destructive; self.onConfirm = onConfirm
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve
@@ -36,7 +37,7 @@ final class DialogController: UIViewController {
         let body = stack(.vertical, 8, [heading, text])
         body.isLayoutMarginsRelativeArrangement = true
         body.layoutMargins = UIEdgeInsets(top: 20, left: 18, bottom: 18, right: 18)
-        let cancel = button("Cancel", color: Theme.blue, weight: .regular) { [weak self] in self?.dismiss(animated: true) }
+        let cancel = button(cancelTitle, color: Theme.blue, weight: .regular) { [weak self] in self?.dismiss(animated: true) }
         let confirm = button(actionTitle, color: destructive ? Theme.destructive : Theme.blue, weight: .semibold) { [weak self] in
             guard let self else { return }
             self.dismiss(animated: true) { self.onConfirm() }

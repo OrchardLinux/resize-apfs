@@ -107,6 +107,9 @@ final class HelperServer: @unchecked Sendable {
                         case "start":
                             guard let data = request.body else { throw ResizeError("Missing start request.") }
                             body = try encoder.encode(engine.start(decoder.decode(StartRequest.self, from: data)))
+                        case "stop":
+                            guard let data = request.body else { throw ResizeError("Missing stop request.") }
+                            body = try encoder.encode(engine.stop(decoder.decode(StopRequest.self, from: data)))
                         case "removeSnapshot", "takeSnapshot":
                             guard let data = request.body else { throw ResizeError("Missing snapshot request.") }
                             let snapshotRequest = try decoder.decode(SnapshotRequest.self, from: data)
