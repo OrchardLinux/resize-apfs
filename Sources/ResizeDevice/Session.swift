@@ -13,7 +13,12 @@ public enum SessionTrust {
     /// the process running it the storage API.
     public static func validatedUIPath(_ path: String) throws -> String {
         guard path.hasPrefix("/") else { throw ResizeError("--ui-path must be an absolute path.") }
-        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        // realpath(3), not resolvingSymlinksInPath: on iOS, Foundation drops the
+        // leading /private, while the kernel reports the app as /private/var/...,
+        // so the helper would refuse the app's connection.
+        guard let real = realpath(path, nil) else { throw ResizeError("--ui-path \(path) does not exist.") }
+        let resolved = String(cString: real)
+        free(real)
         try requireProtected(resolved, directory: false)
         try requireProtected((resolved as NSString).deletingLastPathComponent, directory: true)
         return resolved
@@ -51,11 +56,13 @@ public enum AppRegistration {
     }
 
     public static func validate(_ path: String) throws -> Bundle {
-        let url = URL(fileURLWithPath: path).standardizedFileURL
-        guard path.hasPrefix("/"), url.path == path,
-              url.deletingLastPathComponent().path == folder, url.pathExtension == "app" else {
+        // Compared as text, not standardized: on iOS, Foundation's standardizing
+        // drops the leading /private of /private/var paths, so the folder never matched.
+        let name = String(path.dropFirst(folder.count + 1))
+        guard path.hasPrefix(folder + "/"), name.hasSuffix(".app"), name.count > 4, !name.contains("/") else {
             throw ResizeError("Only an app bundle directly in \(folder) can be registered.")
         }
+        let url = URL(fileURLWithPath: path, isDirectory: true)
         var info = stat()
         guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
             throw ResizeError("\(path) is not an app bundle directory.")

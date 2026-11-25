@@ -17,7 +17,10 @@ final class SessionTests: XCTestCase {
         let binary = app.appendingPathComponent("ResizeAPFS")
         try Data([0]).write(to: binary)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
-        let resolved = binary.resolvingSymlinksInPath().path
+        // The kernel reports executables under /private/var; Foundation's resolving
+        // drops /private, so the trusted path must keep it (temporary files are in /var here).
+        let resolved = String(cString: realpath(binary.path, nil))
+        XCTAssertTrue(resolved.hasPrefix("/private/"), resolved)
         XCTAssertEqual(try SessionTrust.validatedUIPath(binary.path), resolved)
         XCTAssertThrowsError(try SessionTrust.validatedUIPath("relative/ResizeAPFS"))
         XCTAssertThrowsError(try SessionTrust.validatedUIPath(app.path), "a directory is not an executable")
@@ -34,7 +37,8 @@ final class SessionTests: XCTestCase {
         // kernel never reports for a running executable.
         for path in ["/Applications/ResizeAPFS.app", "/var/ResizeAPFS/ResizeAPFS.app", "/private/var/ResizeAPFS",
                      "/private/var/ResizeAPFS/Other/ResizeAPFS.app", "/private/var/ResizeAPFS/../tmp/ResizeAPFS.app",
-                     "/var/root/ResizeAPFS.app", "/private/var/ResizeAPFS/ResizeAPFS", "private/var/ResizeAPFS/ResizeAPFS.app"] {
+                     "/var/root/ResizeAPFS.app", "/private/var/ResizeAPFS/ResizeAPFS", "private/var/ResizeAPFS/ResizeAPFS.app",
+                     "/private/var/ResizeAPFS/.app", "/private/var/ResizeAPFS//ResizeAPFS.app", "/private/var/ResizeAPFSx/ResizeAPFS.app"] {
             XCTAssertThrowsError(try AppRegistration.validate(path), path) { error in
                 XCTAssertTrue("\(error.localizedDescription)".contains("directly in /private/var/ResizeAPFS"), path)
             }
