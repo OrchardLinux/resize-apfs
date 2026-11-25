@@ -86,8 +86,8 @@ class Session:
     def close(self):
         self.run_process([*self.base, '-O', 'exit'], env=self.env, capture_output=True, timeout=30)
 
-    def sh(self, script, what, stdin=None, check=True):
-        result = self.run_process([*self.base, script], env=self.env, input=stdin, capture_output=True, timeout=300)
+    def sh(self, script, what, stdin=None, check=True, timeout=300):
+        result = self.run_process([*self.base, script], env=self.env, input=stdin, capture_output=True, timeout=timeout)
         if check:
             detail = result.stderr.decode(errors='replace').strip() if isinstance(result.stderr, bytes) else (result.stderr or '').strip()
             require(result.returncode == 0, f'{what} failed on the device' + (f': {detail}' if detail else '.'))
@@ -151,9 +151,13 @@ def start_helper(session):
 
 def busy(session):
     """True while a resize the helper started is still running, False only when the helper
-    clearly says none is (exit 1), None when the device could not be asked (SSH failed, the
-    helper is missing): the helper outlives a dropped connection, so silence is not "done"."""
-    code = session.sh(f'{HELPER} --operation-active', 'Asking the helper', check=False).returncode
+    clearly says none is (exit 1), None when the device could not be asked (SSH failed or
+    timed out, the helper is missing): the helper outlives a dropped connection, so silence
+    is not "done"."""
+    try:
+        code = session.sh(f'{HELPER} --operation-active', 'Asking the helper', check=False, timeout=45).returncode
+    except subprocess.TimeoutExpired:
+        return None
     return {0: True, 1: False}.get(code)
 
 
@@ -164,13 +168,24 @@ def finish(session):
     nothing was stopped or the helper is left as it was) or 'removed'; a failed removal
     after the helper stopped raises. The resize worker is a separate process and is never
     signalled."""
-    stopped = session.sh(f'if {HELPER} --operation-active; then exit 3; fi; '
-                         f'if [ -f {PIDFILE} ]; then pid="$(cat {PIDFILE})"; kill "$pid" 2>/dev/null; i=0; '
-                         f'while kill -0 "$pid" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done; '
-                         f'kill -9 "$pid" 2>/dev/null; rm -f {PIDFILE}; fi', 'Stopping the helper', check=False)
+    try:
+        stopped = session.sh(f'if {HELPER} --operation-active; then exit 3; fi; '
+                             f'if [ -f {PIDFILE} ]; then pid="$(cat {PIDFILE})"; kill "$pid" 2>/dev/null; i=0; '
+                             f'while kill -0 "$pid" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done; '
+                             f'kill -9 "$pid" 2>/dev/null; rm -f {PIDFILE}; fi', 'Stopping the helper', check=False, timeout=90)
+    except subprocess.TimeoutExpired:
+        return 'unanswered'
     if stopped.returncode != 0:
         return 'busy' if stopped.returncode == 3 else 'unanswered'
-    session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app')
+    try:
+        removed = session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app', check=False, timeout=90)
+    except subprocess.TimeoutExpired:
+        return 'unanswered'
+    if removed.returncode == 255:
+        # SSH itself failed: the next try finds the helper stopped and removes the app then.
+        return 'unanswered'
+    detail = removed.stderr.decode(errors='replace').strip() if isinstance(removed.stderr, bytes) else (removed.stderr or '').strip()
+    require(removed.returncode == 0, 'Removing the app failed on the device' + (f': {detail}' if detail else '.'))
     return 'removed'
 
 
@@ -230,6 +245,33 @@ def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, p
                      'without the checkra1n app, run checkra1n again.')
 
 
+PROMPT = 'Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. '
+RETRY_SECONDS = 3
+
+
+def leave(session, ask, sleep=time.sleep):
+    """After Enter: remove the app once the helper clearly says no resize runs. A device that
+    does not answer is asked again every few seconds, without a time limit, so cleanup never
+    follows silence; Ctrl-C ends the wait and removes nothing. A running resize asks for
+    Enter again."""
+    ask(PROMPT)
+    waiting = False
+    while True:
+        state = busy(session)
+        outcome = 'unanswered' if state is None else 'busy' if state else finish(session)
+        if outcome == 'removed':
+            return
+        if outcome == 'unanswered':
+            if not waiting:
+                print('Waiting for the device to answer. Unlock it if it is locked.', flush=True)
+                waiting = True
+            sleep(RETRY_SECONDS)
+            continue
+        waiting = False
+        print('A resize is still running. Wait until the app shows it has finished.')
+        ask(PROMPT)
+
+
 def run(executable, ask=input):
     app, helper = payload()
     work = ROOT / '.work'
@@ -249,14 +291,7 @@ def run(executable, ask=input):
             remove_leftovers(session)
             install(session, app, helper)
             start_helper(session)
-            while True:
-                ask('Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. ')
-                state = busy(session)
-                outcome = 'unanswered' if state is None else 'busy' if state else finish(session)
-                if outcome == 'removed':
-                    break
-                print('The device did not answer. Unlock it, then press Enter again.' if outcome == 'unanswered'
-                      else 'A resize is still running. Wait until the app shows it has finished.')
+            leave(session, ask)
             print('Removed.')
         finally:
             session.close()
