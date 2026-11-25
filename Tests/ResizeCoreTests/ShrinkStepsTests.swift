@@ -88,16 +88,17 @@ final class ShrinkStepsTests: XCTestCase {
 
     func testBudgetHalvesWhenSlowAndGrowsWithTheMeasuredSpeedUpToTheMaximum() {
         var budget = ShrinkSteps.startingBudget
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 46); XCTAssertEqual(budget, 512 * MiB)
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 30); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 71); XCTAssertEqual(budget, 512 * MiB)
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 50); XCTAssertEqual(budget, 512 * MiB)
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 94) }
         XCTAssertEqual(budget, ShrinkSteps.minimumBudget)
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB, "at most doubling")
-        // A call just under the fast limit grows only toward the target time: 18 s -> x30/18.
-        XCTAssertEqual(ShrinkSteps.adjustedBudget(GiB, afterCallSeconds: 18), Int64(Double(GiB) * 30 / 18) / MiB * MiB)
+        // A call just under the fast limit grows only toward the target time: 29 s (the XR's) -> x50/29.
+        XCTAssertEqual(ShrinkSteps.adjustedBudget(512 * MiB, afterCallSeconds: 29), Int64(Double(512 * MiB) * 50 / 29) / MiB * MiB)
+        XCTAssertEqual(ShrinkSteps.adjustedBudget(GiB, afterCallSeconds: 60), GiB, "the XR's first call (60 s) keeps its budget")
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 1) }
         XCTAssertEqual(budget, ShrinkSteps.maximumBudget, "fast storage is no longer held at the starting budget")
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 50); XCTAssertEqual(budget, 4 * GiB, "still halves after a slow call")
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 75); XCTAssertEqual(budget, 4 * GiB, "still halves after a slow call")
     }
 
     func testFallbackStepsScaleWithTheBudgetButStayWithinTheWatchdogProvenSize() {

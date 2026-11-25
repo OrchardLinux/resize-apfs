@@ -198,12 +198,13 @@ public enum ShrinkSteps {
     public static let maximumFallbackStepBytes: Int64 = 16 << 30
     /// The iOS watchdog resets the device after about 90 s without a check-in
     /// (docs/j96-ios15-preparation.md: 91 s, the worker blocked in the kernel).
-    /// Calls aim at a third of that, so one step twice as slow as estimated
-    /// stays far from it and only halves the next; each step also shows
-    /// progress (an update every half minute or so, never a silent half hour).
-    public static let slowCallSeconds: Double = 45
-    public static let fastCallSeconds: Double = 20
-    public static let targetCallSeconds: Double = 30
+    /// Calls aim at 50 s: call times are steady (iPhone XR, iOS 18: 103 of 105
+    /// calls within 27-36 s, at most 1.25x their neighbours), so even a step a
+    /// quarter slower than estimated ends near 62 s, and one over 70 s halves the
+    /// next. Each step still shows progress, about once a minute.
+    public static let slowCallSeconds: Double = 70
+    public static let fastCallSeconds: Double = 35
+    public static let targetCallSeconds: Double = 50
     /// Intermediate targets are whole MiB from the container start.
     public static let alignment: Int64 = 1 << 20
     /// A short rest between calls, so writes iOS queued during one call can
