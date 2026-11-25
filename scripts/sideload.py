@@ -1,6 +1,7 @@
 """Sign the pinned Dopamine with the user's own Apple ID and install it, on Linux and macOS.
 
-xtool (pinned in tools.py) does the Apple side: `xtool auth login` signs in once (two-factor
+On a Mac whose Xcode is signed in to an Apple ID, that account signs it (xcode_signing.py):
+nothing new to sign in to. Otherwise xtool (pinned in tools.py) does the Apple side: `xtool auth login` signs in once (two-factor
 included) and keeps the session; `xtool install` registers the device, makes the App ID and
 provisioning profile, signs the app and installs it over the cable. The App ID is
 `XTL-<account>.<bundle identifier>`, the same on every signing, so re-signing every 7 days
@@ -30,6 +31,7 @@ import tempfile
 import zipfile
 
 import tools
+import xcode_signing
 from image_format import require
 
 MARGIN = datetime.timedelta(days=1)
@@ -40,11 +42,25 @@ VERIFY = ('Before opening Dopamine the first time, trust your Apple ID on the de
 
 
 def available(host=tools.host):
-    """True when xtool has a release for this computer."""
+    """True when Dopamine can be signed here: Xcode on a Mac, or an xtool release for this computer."""
     try:
         return ('xtool', *host()) in tools.PINS
     except ValueError:
         return False
+
+
+def xcode_team(ask=input, run=subprocess.run):
+    """(team id, name, free) of the account a Mac's Xcode is signed in to, or None (not a Mac,
+    no devicectl, or no account): then xtool signs."""
+    if sys.platform != 'darwin':
+        return None
+    try:
+        if run(['xcrun', '--find', 'devicectl'], capture_output=True, timeout=30).returncode:
+            return None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    found = xcode_signing.teams(run)
+    return xcode_signing.choose_team(found, ask) if found else None
 
 
 def environment():
@@ -122,7 +138,9 @@ def installed(udid, identifier, run=subprocess.run):
             apps = json.loads(output.read_text())['result']['apps'] if result.returncode == 0 else None
         except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired):
             return None
-    return None if apps is None else any(a.get('bundleIdentifier', '').endswith('.' + identifier) for a in apps)
+    # xtool's App IDs carry a prefix (XTL-<account>.<identifier>).
+    return None if apps is None else any(a.get('bundleIdentifier', '') == identifier or
+                                         a.get('bundleIdentifier', '').endswith('.' + identifier) for a in apps)
 
 
 def describe(udid, run=subprocess.run):
@@ -163,31 +181,58 @@ def still_signed(key, udid, now=None, root=None, run=subprocess.run, identifier=
     return None if installed(udid, identifier, run) is False else expires
 
 
-def install(ipa, udid, ask=input, run=subprocess.run, root=None, replacements=None, provide=tools.provide):
+def install(ipa, udid, ask=input, run=subprocess.run, root=None, replacements=None, provide=tools.provide,
+            team=None):
     """Sign `ipa` with the user's Apple ID and install it on `udid` after one confirmation,
-    unless a signed copy is still installed."""
+    unless a signed copy is still installed. `team`: Xcode's account (xcode_team), or None
+    for xtool."""
     replacements = bootstraps(provide) if replacements is None else replacements
-    # The installed copy is kept only when it was made from the same IPA and bootstraps.
-    key = hashlib.sha256(' '.join([tools.sha256_file(ipa)] + [tools.sha256_file(replacements[v])
+    team = xcode_team(ask, run) if team is None else (team or None)
+    identifier = xcode_signing.bundle_id(team[0]) if team else 'com.opa334.Dopamine'
+    # The installed copy is kept only when it was made from the same IPA and bootstraps, the same way.
+    key = hashlib.sha256(' '.join([identifier, tools.sha256_file(ipa)] + [tools.sha256_file(replacements[v])
                          for v in sorted(replacements)]).encode()).hexdigest()
-    expires = still_signed(key, udid, root=root, run=run)
+    expires = still_signed(key, udid, root=root, run=run, identifier=identifier)
     if expires:
         print(f'Dopamine is installed and signed until {expires:%d %b %Y}.')
         return
-    ask(f'Sign Dopamine with your Apple ID and install it on {describe(udid, run)}. Press Enter to continue. ')
-    xtool = provide('xtool')
-    if not logged_in(xtool, run):
-        log_in(xtool, run)
+    account = f"the Apple ID Xcode is signed in to ({team[1]})" if team else 'your Apple ID'
+    ask(f'Sign Dopamine with {account} and install it on {describe(udid, run)}. Press Enter to continue. ')
     with tempfile.TemporaryDirectory(prefix='dopamine-sign-') as work:
-        prepared = prepared_ipa(ipa, work, replacements)
-        print('Signing and installing Dopamine...', flush=True)
-        signed_at = datetime.datetime.now(datetime.timezone.utc)
-        # In this terminal: xtool may ask to trust the device or to replace a certificate.
-        result = run([str(xtool), 'install', '--usb', '--udid', udid, str(prepared)], env=environment())
-        require(result.returncode == 0, f'Signing or installing Dopamine failed (xtool exit status {result.returncode}).')
-    when = signed_at + VALIDITY
+        work = pathlib.Path(work)
+        prepared = prepared_ipa(ipa, work / 'prepared', replacements)
+        if team:
+            when = install_with_xcode(prepared, work / 'xcode', team[0], identifier, udid, run)
+        else:
+            when = install_with_xtool(prepared, udid, run, provide)
     record = record_path(udid, root)
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(json.dumps({'expires': when.isoformat(), 'key': key}))
     print(f'Dopamine is installed, signed until about {when:%d %b %Y}.')
     print(VERIFY, flush=True)
+
+
+def install_with_xcode(prepared, work, team, identifier, udid, run=subprocess.run):
+    """Sign with Xcode's account and install with devicectl; the profile's expiry."""
+    print('Making a signing profile with Xcode...', flush=True)
+    profile, entitlements, sha1 = xcode_signing.provision(work / 'profile', team, udid, run)
+    when = xcode_signing.expiry(profile, run)
+    app = xcode_signing.resign(prepared, work / 'app', identifier, profile, entitlements, sha1, run)
+    print('Installing Dopamine...', flush=True)
+    result = run(['xcrun', 'devicectl', 'device', 'install', 'app', '--device', udid, str(app)],
+                 capture_output=True, text=True, timeout=600)
+    require(result.returncode == 0, 'Installing Dopamine failed: ' + (result.stderr or result.stdout).strip()[-800:])
+    return when
+
+
+def install_with_xtool(prepared, udid, run=subprocess.run, provide=tools.provide):
+    """Sign and install with xtool, signing in first when needed; the expected expiry."""
+    xtool = provide('xtool')
+    if not logged_in(xtool, run):
+        log_in(xtool, run)
+    print('Signing and installing Dopamine...', flush=True)
+    signed_at = datetime.datetime.now(datetime.timezone.utc)
+    # In this terminal: xtool may ask to trust the device or to replace a certificate.
+    result = run([str(xtool), 'install', '--usb', '--udid', udid, str(prepared)], env=environment())
+    require(result.returncode == 0, f'Signing or installing Dopamine failed (xtool exit status {result.returncode}).')
+    return signed_at + VALIDITY

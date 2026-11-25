@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
     scripts = ['launcher.py', 'palera.py', 'boot_device.py', 'boot-device.sh', 'build-overlay.py',
                'extract-binpack.py', 'overlay_linux.py', 'overlay_macos.py', 'image_format.py',
                'hfs-root-ownership.py', 'audit-overlay.py', 'build-linux-tools.sh',
-               'tools.py', 'usbmux.py', 'checkra1n_route.py', 'dopamine_route.py', 'sideload.py', 'boot_run.py']
+               'tools.py', 'usbmux.py', 'checkra1n_route.py', 'dopamine_route.py', 'sideload.py', 'xcode_signing.py', 'boot_run.py']
     for script in scripts:
         shutil.copy2(ROOT / 'scripts' / script, package / 'scripts' / script)
     for file in ['upstream.lock.json', 'dev.omarchy.resize-apfs.plist', 'README.md']:

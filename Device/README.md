@@ -156,8 +156,11 @@ copying the app before the first helper command and removing it after the last.
 `scripts/dopamine_route.py` runs the checkra1n route's session on a device jailbroken with
 [Dopamine](https://github.com/opa334/Dopamine), with the iOS 15+ payload (`out/device`). The
 launcher downloads the pinned `Dopamine.ipa` (3.0.13, ad-hoc signed) into Orchard's cache and
-asks the user to confirm Developer Mode is on. `scripts/sideload.py` then signs and installs it
-with the pinned xtool (2.0.0-beta.2; AppImage on Linux, notarized app on macOS, run with
+asks the user to confirm Developer Mode is on. On a Mac whose Xcode is signed in,
+`scripts/xcode_signing.py` signs it with that account: Xcode builds a one-file stub app with
+automatic signing for the connected device (registering it and making the profile), the stub's
+profile, entitlements and certificate sign Dopamine as `dev.orchard.dopamine.<team>`, and
+`devicectl` installs it. Otherwise `scripts/sideload.py` signs and installs it with the pinned xtool (2.0.0-beta.2; AppImage on Linux, notarized app on macOS, run with
 `XTL_CLI=1`): `xtool auth login` once, in the user's terminal, then `xtool install --usb --udid`,
 which registers the device, makes the App ID (`XTL-<account>.com.opa334.Dopamine`, the same on
 every signing) and profile, signs and installs. The expiry is kept in Orchard's cache; a

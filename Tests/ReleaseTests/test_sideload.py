@@ -95,6 +95,7 @@ class InstallTests(unittest.TestCase):
             (self.root / v).write_bytes(b'ssh ' + v.encode())
             self.replacements[v] = self.root / v
         self.calls = []
+        self.team = False  # xtool, unless a test gives Xcode's account
 
     def run_tool(self, argv, **kwargs):
         self.calls.append([str(a) for a in argv])
@@ -105,7 +106,7 @@ class InstallTests(unittest.TestCase):
     def install(self, asked):
         with mock.patch('sys.stdout', io.StringIO()), mock.patch.object(sideload, 'describe', lambda udid, run: 'XR'):
             sideload.install(self.root / 'Dopamine.ipa', 'UDID-1', ask=asked.append, run=self.run_tool,
-                             root=self.root, replacements=self.replacements, provide=lambda tool: 'xtool')
+                             root=self.root, replacements=self.replacements, provide=lambda tool: 'xtool', team=self.team)
 
     def test_one_confirmation_then_sign_in_and_install_on_that_device(self):
         asked = []
@@ -132,6 +133,28 @@ class InstallTests(unittest.TestCase):
         with mock.patch.object(sideload, 'installed', lambda *a: False):
             self.install(asked)
         self.assertEqual(len(asked), 1)
+
+    def test_xcodes_account_signs_without_xtool_or_a_new_sign_in(self):
+        self.team = ('ABCDE12345', 'Someone (Personal Team)', True)
+        signed = []
+        when = datetime.datetime(2026, 12, 3, tzinfo=datetime.timezone.utc)
+        def xcode(prepared, work, team, identifier, udid, run):
+            signed.append((team, identifier, udid))
+            with zipfile.ZipFile(prepared) as archive:
+                self.assertEqual(archive.read('Payload/Dopamine.app/bootstrap_1900.tar.zst'), b'ssh 1900')
+            return when
+        asked = []
+        with mock.patch.object(sideload, 'install_with_xcode', xcode):
+            self.install(asked)
+        self.assertIn('the Apple ID Xcode is signed in to (Someone (Personal Team))', asked[0])
+        self.assertEqual(signed, [('ABCDE12345', 'dev.orchard.dopamine.abcde12345', 'UDID-1')])
+        self.assertEqual(self.calls, [], 'xtool is not used')
+
+    def test_no_xcode_account_means_xtool(self):
+        with mock.patch.object(sys, 'platform', 'linux'):
+            self.assertIsNone(sideload.xcode_team(run=lambda *a, **k: self.fail('asked')))
+        with mock.patch.object(sys, 'platform', 'darwin'), mock.patch.object(sideload.xcode_signing, 'teams', lambda run: []):
+            self.assertIsNone(sideload.xcode_team(run=lambda *a, **k: done()))
 
     def test_a_failed_install_records_nothing(self):
         self.run_tool = lambda argv, **k: done('Logged in.') if argv[1:3] == ['auth', 'status'] else done(code=1)
