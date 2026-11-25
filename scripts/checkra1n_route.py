@@ -150,15 +150,28 @@ def start_helper(session):
 
 
 def busy(session):
-    """True while a resize the helper started is still running."""
-    return session.sh(f'{HELPER} --operation-active', 'Asking the helper', check=False).returncode == 0
+    """True while a resize the helper started is still running, False only when the helper
+    clearly says none is (exit 1), None when the device could not be asked (SSH failed, the
+    helper is missing): the helper outlives a dropped connection, so silence is not "done"."""
+    code = session.sh(f'{HELPER} --operation-active', 'Asking the helper', check=False).returncode
+    return {0: True, 1: False}.get(code)
 
 
 def finish(session):
-    session.sh(f'if [ -f {PIDFILE} ]; then pid="$(cat {PIDFILE})"; kill "$pid" 2>/dev/null; i=0; '
-               f'while kill -0 "$pid" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done; '
-               f'kill -9 "$pid" 2>/dev/null; rm -f {PIDFILE}; fi', 'Stopping the helper', check=False)
+    """Stop the helper and remove the app, unless a resize is running by then: the device
+    script asks the helper again first (exit 3), so nothing is stopped mid-resize even if
+    one started after the last check. 'busy', 'unanswered' (the device could not be reached;
+    nothing was stopped or the helper is left as it was) or 'removed'; a failed removal
+    after the helper stopped raises. The resize worker is a separate process and is never
+    signalled."""
+    stopped = session.sh(f'if {HELPER} --operation-active; then exit 3; fi; '
+                         f'if [ -f {PIDFILE} ]; then pid="$(cat {PIDFILE})"; kill "$pid" 2>/dev/null; i=0; '
+                         f'while kill -0 "$pid" 2>/dev/null && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done; '
+                         f'kill -9 "$pid" 2>/dev/null; rm -f {PIDFILE}; fi', 'Stopping the helper', check=False)
+    if stopped.returncode != 0:
+        return 'busy' if stopped.returncode == 3 else 'unanswered'
     session.sh(f'{HELPER} --unregister-app {APP}; rm -rf {SESSION}', 'Removing the app')
+    return 'removed'
 
 
 def checkra1n_command(executable, run=subprocess.run):
@@ -238,10 +251,12 @@ def run(executable, ask=input):
             start_helper(session)
             while True:
                 ask('Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. ')
-                if not busy(session):
+                state = busy(session)
+                outcome = 'unanswered' if state is None else 'busy' if state else finish(session)
+                if outcome == 'removed':
                     break
-                print('A resize is still running. Wait until the app shows it has finished.')
-            finish(session)
+                print('The device did not answer. Unlock it, then press Enter again.' if outcome == 'unanswered'
+                      else 'A resize is still running. Wait until the app shows it has finished.')
             print('Removed.')
         finally:
             session.close()

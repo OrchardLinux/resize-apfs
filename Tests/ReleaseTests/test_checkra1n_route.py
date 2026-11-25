@@ -330,6 +330,51 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(recorder.commands[-1], '/private/var/ResizeAPFS/resize-helper --unregister-app '
                          '/private/var/ResizeAPFS/ResizeAPFS.app; rm -rf /private/var/ResizeAPFS')
 
+    def coded(self, codes):
+        """A runner answering each command with the first code whose key is in it (else 0)."""
+        commands = []
+        def run(argv, **kwargs):
+            commands.append(argv[-1])
+            code = next((c for key, c in codes if key in argv[-1]), 0)
+            return subprocess.CompletedProcess(argv, code, b'', b'')
+        return run, commands
+
+    def test_only_a_clear_answer_from_the_helper_counts_as_not_busy(self):
+        for code, expected in [(0, True), (1, False), (255, None), (127, None)]:
+            run, _ = self.coded([('--operation-active', code)])
+            self.assertIs(checkra1n_route.busy(checkra1n_route.Session(self.work, run=run)), expected, code)
+
+    def test_finish_stops_nothing_while_a_resize_runs_or_the_device_is_silent(self):
+        for code, expected in [(3, 'busy'), (255, 'unanswered')]:
+            run, commands = self.coded([('kill', code)])
+            self.assertEqual(checkra1n_route.finish(checkra1n_route.Session(self.work, run=run)), expected)
+            self.assertNotIn('--unregister-app', '\n'.join(commands), 'the app stays while the helper may run')
+        run, commands = self.coded([])
+        self.assertEqual(checkra1n_route.finish(checkra1n_route.Session(self.work, run=run)), 'removed')
+        # The device script asks the helper again before stopping it.
+        self.assertTrue(commands[0].startswith('if /private/var/ResizeAPFS/resize-helper --operation-active; then exit 3; fi;'))
+
+    def test_a_silent_device_is_never_cleaned_up_or_reported_removed(self):
+        answers = iter([255, 255, 1])  # asleep, still asleep, then not busy
+        run, commands = self.coded([])
+        def runner(argv, **kwargs):
+            if '--operation-active' in argv[-1] and not argv[-1].startswith('if '):
+                commands.append(argv[-1])
+                return subprocess.CompletedProcess(argv, next(answers), b'', b'')
+            return run(argv, **kwargs)
+        session = checkra1n_route.Session(self.work, run=runner)
+        prompts, output = [], io.StringIO()
+        with mock.patch.object(checkra1n_route, 'payload', return_value=(self.app, self.helper)), \
+                mock.patch.object(checkra1n_route.boot_run, 'run', return_value='booted'), \
+                mock.patch.object(checkra1n_route, 'Session', return_value=session), \
+                mock.patch.object(checkra1n_route, 'checkra1n_command', return_value=['checkra1n']), \
+                mock.patch.object(session, 'open'), mock.patch('sys.stdout', output):
+            checkra1n_route.run('checkra1n', ask=prompts.append)
+        self.assertEqual(len(prompts), 3)
+        self.assertEqual(output.getvalue().count('The device did not answer. Unlock it, then press Enter again.'), 2)
+        self.assertTrue(output.getvalue().rstrip().endswith('Removed.'))
+        self.assertEqual(sum('--unregister-app /private/var/ResizeAPFS/ResizeAPFS.app; rm -rf' in c for c in commands), 1)
+
     def test_leftovers_are_removed_from_the_session_folder_and_the_old_location(self):
         recorder = Recorder()
         checkra1n_route.remove_leftovers(checkra1n_route.Session(self.work, run=recorder))
