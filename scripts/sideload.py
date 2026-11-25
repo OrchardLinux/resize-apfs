@@ -31,6 +31,11 @@ from image_format import require
 MACHO_MAGIC = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf'}
 STUB = 'DopamineSigning'
 MARGIN = datetime.timedelta(days=1)
+# iOS checks a developer certificate with Apple once, online, before the first app it signed
+# opens; until then the app refuses to start with "Untrusted Developer".
+VERIFY = ('Before opening Dopamine the first time: connect the device to Wi-Fi, then on the device go to '
+          'Settings > General > VPN & Device Management, open your Apple ID and tap Verify App. '
+          'iOS checks the signature with Apple once; afterwards Dopamine opens offline too.')
 
 
 def available(run=subprocess.run):
@@ -298,6 +303,7 @@ def install(ipa, udid, ask=input, run=subprocess.run, root=None):
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(json.dumps({'expires': when.isoformat(), 'ipa': ipa_sha256, 'device': udid}))
     print(f'Dopamine is installed, signed until {when:%d %b %Y}' + (' (free Apple ID: 7 days).' if free else '.'))
+    print(VERIFY, flush=True)
 
 
 def tail(log, lines=8):
