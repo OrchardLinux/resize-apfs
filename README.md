@@ -118,8 +118,10 @@ Mode, then signs the downloaded Dopamine with your Apple ID and installs it, aft
 confirmation. On a Mac whose Xcode is signed in to an Apple ID (Xcode > Settings > Accounts),
 that account signs it, with nothing new to sign in to. Otherwise (Linux, or no account in Xcode)
 it uses [xtool](https://github.com/xtool-org/xtool), downloaded like the jailbreaks: the first
-time, xtool asks you to sign in (Apple ID, password, two-factor code) and keeps the session. A
-separate free Apple ID just for sideloading works and keeps your main account out of it. A free Apple ID signs Dopamine for 7 days; the launcher
+time, xtool asks you to sign in (Apple ID, password, two-factor code) and keeps the session. If
+you already signed in to xtool yourself, that session is used (every copy of xtool shares it:
+`~/.config/xtool` on Linux, the Keychain on macOS). A separate free Apple ID just for
+sideloading works and keeps your main account out of it. A free Apple ID signs Dopamine for 7 days; the launcher
 signs it again when that runs out. Before Dopamine opens the first time, trust your Apple ID on
 the device (Settings > General > VPN & Device Management). You open Dopamine and tap Jailbreak;
 the launcher then copies the app in over the SSH server it adds to Dopamine's bootstrap, through
