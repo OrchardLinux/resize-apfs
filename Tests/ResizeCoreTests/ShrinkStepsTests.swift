@@ -101,6 +101,20 @@ final class ShrinkStepsTests: XCTestCase {
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 65); XCTAssertEqual(budget, 4 * GiB, "still halves after a slow call")
     }
 
+    func testAnUnalignedTargetGetsNoExtraStepForItsRemainder() throws {
+        // The rest fits the budget: one step straight to the target, not one to the MiB above it.
+        let final: Int64 = 31_000_000_000
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 32 * GiB, to: final, map: nil, budget: ShrinkSteps.startingBudget), final)
+        XCTAssertEqual(ShrinkSteps.count(from: 32 * GiB, to: final, map: nil, budget: ShrinkSteps.startingBudget), 1)
+        let space = try XCTUnwrap(APFSSpaceMap.uniform(containerBytes: 32 * GiB, allocatedBytes: 4 * GiB))
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 32 * GiB, to: final, map: space, budget: ShrinkSteps.maximumBudget), final)
+        // A boundary less than one MiB above the target folds the remainder in.
+        let other: Int64 = 20 * GiB + 300_000
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: other + 8 * GiB + 524_288, to: other, map: nil, budget: ShrinkSteps.startingBudget), other)
+        // A larger remainder still gets its own step.
+        XCTAssertGreaterThan(ShrinkSteps.nextTarget(from: other + 8 * GiB + 3 * MiB, to: other, map: nil, budget: ShrinkSteps.startingBudget), other)
+    }
+
     func testFallbackStepsScaleWithTheBudgetButStayWithinTheWatchdogProvenSize() {
         XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.startingBudget), 120 * GiB)
         XCTAssertEqual(ShrinkSteps.nextTarget(from: 128 * GiB, to: 16 * GiB, map: nil, budget: 2 * GiB), 112 * GiB)

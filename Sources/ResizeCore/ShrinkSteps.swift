@@ -224,6 +224,11 @@ public enum ShrinkSteps {
         }
         // Rounding up moves the boundary toward `current`: less data, never more.
         boundary = alignUp(max(boundary, 0), to: alignment)
+        // What would remain below it is under one MiB (or nothing, when the rest
+        // fits the budget but `final` is not MiB-aligned): include it in this step
+        // instead of spending a whole call, rest and inspection on it. That moves
+        // at most one MiB more than the budget.
+        if boundary - final < alignment { return final }
         // Always make progress, even through one dense MiB.
         if boundary >= current { boundary = alignDown(current - 1, to: alignment) }
         return max(final, boundary)
