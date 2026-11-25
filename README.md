@@ -16,17 +16,20 @@ also remove the `orig-fs` snapshot that keeps APFS from shrinking further.
 ## Requirements
 
 - An iPhone, iPad or iPod touch with a checkm8 chip (A8 to A11) on iOS/iPadOS 15 or later,
-  or any checkm8 device (A7 to A11) on iOS 12 to 14.
+  or any checkm8 device (A7 to A11) on iOS 12 to 14. Experimental, without DFU: a device
+  [Dopamine](https://github.com/opa334/Dopamine) supports (A8 to A13 on iOS 15.0-18.7.1 and
+  26.0-26.0.1, A14 and later on iOS 15.0-17.3.1), with an Apple ID to sign Dopamine.
 - Linux (x86_64 or ARM64, glibc 2.35+) or macOS (Intel or Apple Silicon).
 - Python 3.9 or later and a USB connection to the device.
 
 The launcher downloads the jailbreak it needs on first use, pinned by size and checksum:
 [palera1n 3.0.0 beta 4](https://github.com/palera1n/palera1n/releases/tag/v3.0.0-beta.4)
 for iOS 15 and later, [checkra1n 0.12.4](https://checkra.in/releases/0.12.4-beta) for
-iOS 12 to 14. They are kept in Orchard's cache (`~/Library/Caches/orchard2` on macOS,
+iOS 12 to 14, [Dopamine 3.0.13](https://github.com/opa334/Dopamine/releases/tag/3.0.13) for the
+route without DFU. They are kept in Orchard's cache (`~/Library/Caches/orchard2` on macOS,
 `~/.cache/orchard2` on Linux), shared with the Orchard installer. To use your own build
-instead, set `PALERA1N` or `CHECKRA1N` to its path. On Apple Silicon, checkra1n needs
-Rosetta. On Linux, the iOS 12-14 route needs the `usbmuxd` service.
+instead, set `PALERA1N`, `CHECKRA1N` or `DOPAMINE` to its path. On Apple Silicon, checkra1n needs
+Rosetta. On Linux, the iOS 12-14 and Dopamine routes need the `usbmuxd` service.
 
 Tested on hardware:
 
@@ -106,7 +109,14 @@ On iOS 15 and later, palera1n boots iOS with Resize APFS in a read-only overlay;
 on iOS 12 to 14, checkra1n boots iOS and the launcher copies the app in over SSH
 through the USB cable for one session, then removes it. On both, the system partition
 stays read-only and unchanged; nothing like checkra1n's "Install Cydia" is needed. Neither palera1n nor
-checkra1n is part of the release: the launcher downloads the pinned version. No
+checkra1n is part of the release: the launcher downloads the pinned version.
+
+Without DFU (`./resize-apfs boot --dopamine`), the launcher asks you to turn on Developer
+Mode, then to sign the downloaded Dopamine with your Apple ID and install it (Xcode,
+Sideloadly, AltStore or similar). You open Dopamine and tap Jailbreak; the launcher then
+copies the app in over Dopamine's SSH server through the USB cable for one session, as on
+iOS 12 to 14, and removes it afterwards. After every restart of the device, tap Jailbreak
+again before the next session. No
 Apple framework or firmware is bundled.
 
 ## Development

@@ -150,3 +150,24 @@ iOS 12.0 and 12.1 have no Swift runtime, so the app bundles Apple's back-deploym
 use the system's. The helper's second search path is `/private/var/ResizeAPFS/ResizeAPFS.app/Frameworks`:
 on iOS 12.0-12.1 every helper command needs the app installed, which the route guarantees by
 copying the app before the first helper command and removing it after the last.
+
+## Without DFU (Dopamine route)
+
+`scripts/dopamine_route.py` runs the checkra1n route's session on a device jailbroken with
+[Dopamine](https://github.com/opa334/Dopamine), with the iOS 15+ payload (`out/device`). The
+launcher downloads the pinned `Dopamine.ipa` (3.0.13, ad-hoc signed) into Orchard's cache and
+asks the user to confirm two steps: Developer Mode is on, and they signed Dopamine with their
+own Apple ID and installed it. Releases never contain a team-signed Dopamine.
+
+Dopamine's bootstrap (Procursus `bootstrap-ssh`, bundled in the app) installs OpenSSH under
+`/var/jb`, and Dopamine starts it with its other launch daemons after each jailbreak (port 22).
+Root has no password there, so the session logs in as `mobile` (`alpine` unless changed in
+Dopamine's settings; the launcher asks for the password otherwise) and runs every command as
+root through `/var/jb/usr/bin/sudo -k -S`. sudo reads the password from the first input line,
+one byte at a time, so a copied file follows it unread. The bootstrap's tools come first on
+`PATH`; stock iOS has no `mkdir` or `cat`.
+
+Dopamine trusts every program it sees started, so the ad-hoc signed app and helper run
+unchanged. Files go to `/private/var/ResizeAPFS`, as on iOS 12-14; nothing is installed under
+`/var/jb`. The iOS 15+ helper therefore also carries the two registration entitlements
+(`--register-app` / `--unregister-app`). Not yet run on a device.

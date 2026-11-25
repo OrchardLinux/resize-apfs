@@ -8,6 +8,10 @@
     <key>com.apple.security.iokit-user-client-class</key>
     <!-- AppleKeyStoreUserClient: MobileKeyBag's first-unlock query (FirstUnlock). -->
     <array><string>AppleAPFSUserClient</string><string>AppleKeyStoreUserClient</string></array>
+    <!-- Dopamine session only: adding and removing the app on the home screen
+         (--register-app / --unregister-app), as uicache does. -->
+    <key>com.apple.lsapplicationworkspace.rebuildappdatabases</key><true/>
+    <key>com.apple.private.MobileContainerManager.allowed</key><true/>
     <!-- Opening the app once the helper starts (LaunchServices, SpringBoard). -->
     <key>com.apple.springboard.launchapplications</key><true/>
     <key>com.apple.frontboard.launchapplications</key><true/>

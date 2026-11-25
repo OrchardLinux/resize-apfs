@@ -92,20 +92,24 @@ class ToolTests(unittest.TestCase):
 
 class VersionChoiceTests(unittest.TestCase):
     def test_the_answer_picks_the_route(self):
-        with mock.patch('builtins.input', return_value='2'), mock.patch('sys.stdout', io.StringIO()):
-            self.assertEqual(launcher.ios_version(None), 12)
-        with mock.patch('builtins.input', return_value='1'), mock.patch('sys.stdout', io.StringIO()):
-            self.assertEqual(launcher.ios_version(None), 15)
+        for answer, chosen in (('1', 'palera1n'), ('2', 'checkra1n'), ('3', 'dopamine')):
+            with mock.patch('builtins.input', return_value=answer), mock.patch('sys.stdout', io.StringIO()):
+                self.assertEqual(launcher.route(None), chosen)
 
-    def test_the_option_skips_the_question(self):
+    def test_the_options_skip_the_question(self):
         with mock.patch('builtins.input', side_effect=AssertionError('asked')):
-            self.assertEqual(launcher.ios_version(14), 14)
+            self.assertEqual(launcher.route(14), 'checkra1n')
+            self.assertEqual(launcher.route(17), 'palera1n')
+            self.assertEqual(launcher.route(None, dopamine=True), 'dopamine')
+            self.assertEqual(launcher.route(18, dopamine=True), 'dopamine')
 
     def test_older_than_12_and_other_answers_are_refused(self):
         with self.assertRaises(ValueError):
-            launcher.ios_version(11)
-        with mock.patch('builtins.input', return_value='3'), mock.patch('sys.stdout', io.StringIO()), self.assertRaises(ValueError):
-            launcher.ios_version(None)
+            launcher.route(11)
+        with self.assertRaises(ValueError):
+            launcher.route(14, dopamine=True)
+        with mock.patch('builtins.input', return_value='4'), mock.patch('sys.stdout', io.StringIO()), self.assertRaises(ValueError):
+            launcher.route(None)
 
 
 class BootRunTests(unittest.TestCase):

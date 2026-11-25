@@ -38,29 +38,43 @@ def made_by(overlay, info):
         return False
 
 
-def ios_version(given):
-    """The installed iOS major version: --ios, or the user's answer. It picks the route."""
+def route(given, dopamine=False):
+    """'palera1n', 'checkra1n' or 'dopamine': --dopamine, --ios, or the user's answer."""
+    if dopamine:
+        require(given is None or given >= 15, 'The Dopamine route needs iOS/iPadOS 15 or later.')
+        return 'dopamine'
     if given is None:
         print('iOS/iPadOS version on the device (Settings > General > About):\n'
               '  1) 15 or later\n'
-              '  2) 12, 13 or 14')
+              '  2) 12, 13 or 14\n'
+              '  3) 15 or later, without DFU: Dopamine (also iPhone XS, XR, 11 and other A12/A13 devices)')
         answer = input('> ').strip()
-        require(answer in ('1', '2'), 'Please answer 1 or 2.')
-        given = 15 if answer == '1' else 12
+        require(answer in ('1', '2', '3'), 'Please answer 1, 2 or 3.')
+        return {'1': 'palera1n', '2': 'checkra1n', '3': 'dopamine'}[answer]
     require(given >= 12, 'Resize APFS needs iOS/iPadOS 12 or later.')
-    return given
+    return 'palera1n' if given >= 15 else 'checkra1n'
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Prepare and boot Resize APFS: palera1n for iOS 15+, checkra1n for iOS 12-14.')
+    parser = argparse.ArgumentParser(description='Prepare and boot Resize APFS: palera1n for iOS 15+, checkra1n for iOS 12-14, '
+                                     'Dopamine for iOS 15+ without DFU.')
     parser.add_argument('action', choices=['prepare', 'boot'])
     parser.add_argument('--ios', type=int, metavar='VERSION',
                         help='the installed iOS major version (e.g. 15 or 12); skips the question')
+    parser.add_argument('--dopamine', action='store_true',
+                        help='use Dopamine instead of DFU (iOS 15 or later); skips the question')
     args = parser.parse_args()
     require(sys.version_info >= (3, 9), 'Python 3.9 or later is required.')
     require(sys.platform == 'darwin' or sys.platform.startswith('linux'), 'Use Linux or macOS to prepare the overlay.')
     payload = verify_package()
-    if ios_version(args.ios) < 15:
+    chosen = route(args.ios, args.dopamine)
+    if chosen == 'dopamine':
+        import dopamine_route
+        ipa = pinned.provide('dopamine')
+        if args.action == 'boot':
+            dopamine_route.run(ipa)
+        return
+    if chosen == 'checkra1n':
         import checkra1n_route
         checkra1n_route.payload()
         executable = pinned.provide('checkra1n')

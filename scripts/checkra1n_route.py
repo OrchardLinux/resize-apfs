@@ -50,23 +50,29 @@ SSH_PORT = 44
 PASSWORD = 'alpine'
 
 
-def payload(root=PAYLOAD):
+def payload(root=PAYLOAD, missing='This release has no iOS 12-14 app yet (out/device-ios12). '
+            'Use the iOS 15+ route or a newer release.'):
     app, helper = root / 'ResizeAPFS.app', root / 'resize-helper'
-    require(app.is_dir() and helper.is_file(),
-            'This release has no iOS 12-14 app yet (out/device-ios12). Use the iOS 15+ route or a newer release.')
+    require(app.is_dir() and helper.is_file(), missing)
     return app, helper
 
 
 class Session:
-    """One SSH connection to checkra1n's server, reused for every command (ControlMaster)."""
+    """One SSH connection to the device's server, reused for every command (ControlMaster).
 
-    def __init__(self, work, udid=None, run=subprocess.run):
+    checkra1n's server takes root directly. `sudo` (the Dopamine route) logs in as an ordinary
+    user and runs each command as root through that path to sudo, with the same password.
+    `server` names the SSH server in errors."""
+
+    def __init__(self, work, udid=None, run=subprocess.run, port=SSH_PORT, user='root', password=PASSWORD,
+                 sudo=None, shell='sh', path=None, server="checkra1n's SSH server"):
         self.work = pathlib.Path(work)
         self.run_process = run
+        self.password, self.sudo, self.shell, self.path, self.server = password, sudo, shell, path, server
         askpass = self.work / 'askpass'
-        askpass.write_text(f'#!/bin/sh\necho {PASSWORD}\n')
+        askpass.write_text(f'#!/bin/sh\necho {shlex.quote(password)}\n')
         askpass.chmod(0o700)
-        proxy = shlex.join([sys.executable, str(ROOT / 'scripts/usbmux.py'), 'proxy', str(SSH_PORT), *([udid] if udid else [])])
+        proxy = shlex.join([sys.executable, str(ROOT / 'scripts/usbmux.py'), 'proxy', str(port), *([udid] if udid else [])])
         self.env = {**os.environ, 'SSH_ASKPASS': str(askpass), 'SSH_ASKPASS_REQUIRE': 'force', 'DISPLAY': os.environ.get('DISPLAY', ':0')}
         self.base = ['ssh', '-T',
                      '-o', 'ProxyCommand=' + proxy,
@@ -76,17 +82,29 @@ class Session:
                      # Each checkra1n boot may present a new host key; nothing is saved.
                      '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null',
                      '-o', 'LogLevel=ERROR', '-o', 'ServerAliveInterval=15', '-o', 'ConnectTimeout=20',
-                     'root@iphone']
+                     user + '@iphone']
 
     def open(self):
         result = self.run_process([*self.base[:2], '-o', 'ControlMaster=yes', '-o', 'ControlPersist=yes', '-N', '-f',
                                    *self.base[2:]], env=self.env, capture_output=True, text=True, timeout=60)
-        require(result.returncode == 0, "checkra1n's SSH server did not accept the connection: " + result.stderr.strip())
+        require(result.returncode == 0, f'{self.server} did not accept the connection: ' + result.stderr.strip())
 
     def close(self):
         self.run_process([*self.base, '-O', 'exit'], env=self.env, capture_output=True, timeout=30)
 
+    def command(self, script, stdin):
+        """The remote command line and its input. With sudo: `-k` always asks for the password,
+        which sudo reads from the first input line, one byte at a time, so the rest of the input
+        reaches the command unread."""
+        if self.path:
+            script = f'PATH={self.path}; export PATH; {script}'
+        if not self.sudo:
+            return script, stdin
+        return (shlex.join([self.sudo, '-k', '-S', '-p', '', self.shell, '-c', script]),
+                self.password.encode() + b'\n' + (stdin or b''))
+
     def sh(self, script, what, stdin=None, check=True, timeout=300):
+        script, stdin = self.command(script, stdin)
         result = self.run_process([*self.base, script], env=self.env, input=stdin, capture_output=True, timeout=timeout)
         if check:
             detail = result.stderr.decode(errors='replace').strip() if isinstance(result.stderr, bytes) else (result.stderr or '').strip()
@@ -202,7 +220,7 @@ def checkra1n_command(executable, run=subprocess.run):
     return command
 
 
-def ssh_problem(udid=None, connect=None):
+def ssh_problem(udid=None, connect=None, port=SSH_PORT):
     """None when checkra1n's SSH server on the booted device sends its greeting over USB,
     else why not.
 
@@ -211,7 +229,7 @@ def ssh_problem(udid=None, connect=None):
     in iOS without checkra1n's server, is not listed by usbmuxd or refuses the port.
     """
     try:
-        sock = (connect or usbmux.connect)(SSH_PORT, udid)
+        sock = (connect or usbmux.connect)(port, udid)
     except usbmux.MultipleDevices as error:
         # Not a device still starting: say so now instead of after the whole wait.
         raise ValueError(str(error)) from None
@@ -231,9 +249,14 @@ def ssh_answers(udid=None):
     return ssh_problem(udid) is None
 
 
-def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, problem=ssh_problem):
-    """Wait until iOS is back and checkra1n's SSH server answers over USB."""
-    print('Waiting for iOS to start...', flush=True)
+CHECKRA1N_HINT = ("checkra1n's SSH server did not come up: {}. Unlock the device; if it stays in iOS "
+                  'without the checkra1n app, run checkra1n again.')
+
+
+def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, problem=ssh_problem,
+                 waiting='Waiting for iOS to start...', hint=CHECKRA1N_HINT):
+    """Wait until the device's SSH server answers over USB."""
+    print(waiting, flush=True)
     deadline = now() + timeout
     last = None
     while now() < deadline:
@@ -241,8 +264,7 @@ def wait_for_ssh(udid=None, timeout=300, sleep=time.sleep, now=time.monotonic, p
         if last is None:
             return
         sleep(3)
-    raise ValueError(f"checkra1n's SSH server did not come up: {last}. Unlock the device; if it stays in iOS "
-                     'without the checkra1n app, run checkra1n again.')
+    raise ValueError(hint.format(last))
 
 
 PROMPT = 'Resize APFS is on the Home Screen. Press Enter here when you are done to remove it. '

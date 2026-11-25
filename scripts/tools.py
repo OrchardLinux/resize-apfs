@@ -1,4 +1,4 @@
-"""The pinned palera1n and checkra1n, downloaded once into the shared Orchard cache.
+"""The pinned palera1n, checkra1n and Dopamine, downloaded once into the shared Orchard cache.
 
 The cache is the graphical installer's (orchard2): `~/Library/Caches/orchard2` on macOS,
 `$XDG_CACHE_HOME/orchard2` or `~/.cache/orchard2` elsewhere. A release file is stored as
@@ -21,6 +21,7 @@ from image_format import require
 
 PALERA1N_RELEASE = 'https://github.com/palera1n/palera1n/releases/download/v3.0.0-beta.4'
 CHECKRA1N_RELEASE = 'https://assets.checkra.in/downloads'
+DOPAMINE_RELEASE = 'https://github.com/opa334/Dopamine/releases/download/3.0.13'
 
 # Kept identical to orchard2's crates/flow/src/assets.rs PALERA1N_PINS (v3.0.0-beta.4).
 # (tool, os, arch) -> pin. `member` is the executable inside the package. `bundle` keeps the
@@ -58,10 +59,19 @@ PINS = {
         size=10_360_264, sha256='dac9968939ea6e6bfbdedeb41d7e2579c4711dc2c5083f91dced66ca397dc51d',
         package='executable', member=None, executable_sha256=None),
 }
+# Dopamine 3.0.13, the jailbreak app for the route without DFU. Installed on the device, not
+# run here, so one file serves every computer. It is ad-hoc signed: the user signs it for
+# sideloading (dopamine_route.py).
+DOPAMINE = dict(url=DOPAMINE_RELEASE + '/Dopamine.ipa', size=55_422_988,
+                sha256='3664edd737cc672af5d9036d2d1513fb1d50784f0c0cfd49cc6e651b8c665e14', package='file',
+                member=None, executable_sha256=None)
+for _system in ('macos', 'linux'):
+    for _arch in ('arm64', 'x86_64'):
+        PINS[('dopamine', _system, _arch)] = DOPAMINE
 PINS[('palera1n', 'macos', 'x86_64')] = PINS[('palera1n', 'macos', 'arm64')]
 PINS[('checkra1n', 'macos', 'x86_64')] = PINS[('checkra1n', 'macos', 'arm64')]
 
-OVERRIDES = {'palera1n': 'PALERA1N', 'checkra1n': 'CHECKRA1N'}
+OVERRIDES = {'palera1n': 'PALERA1N', 'checkra1n': 'CHECKRA1N', 'dopamine': 'DOPAMINE'}
 
 
 def host():
@@ -158,9 +168,9 @@ def unpack(package, pin, destination):
 
 
 def provide(tool, root=None, fetch=None):
-    """The path of the pinned tool's executable, ready to run.
+    """The path of the pinned tool's executable, ready to run; for Dopamine, its verified IPA.
 
-    `PALERA1N` / `CHECKRA1N` point to a developer's own build instead and skip the download.
+    `PALERA1N` / `CHECKRA1N` / `DOPAMINE` point to a developer's own build instead and skip the download.
     """
     override = os.environ.get(OVERRIDES[tool])
     if override:
@@ -170,6 +180,8 @@ def provide(tool, root=None, fetch=None):
     pin = PINS.get((tool, *host()))
     require(pin is not None, f'{tool} has no release for this computer.')
     root = root or cache_root()
+    if pin['package'] == 'file':
+        return package_path(pin, root, fetch)
     tools = root / 'tools'
     tools.mkdir(parents=True, exist_ok=True)
     key = pin['sha256'][:16]  # orchard2 names its unpacked palera1n the same way
