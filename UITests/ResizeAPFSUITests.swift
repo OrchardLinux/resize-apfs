@@ -77,7 +77,8 @@ final class ResizeAPFSUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["operationHeading"].waitForExistence(timeout: 8))
         let afterReopen = try snapshotJSON()
         XCTAssertEqual((afterReopen["operation"] as? [String: Any])?["id"] as? String, operationID)
-        XCTAssertTrue(app.staticTexts["operationCompleted"].waitForExistence(timeout: 60))
+        // Stepwise shrinking made this run take about a minute; leave room.
+        XCTAssertTrue(app.staticTexts["operationCompleted"].waitForExistence(timeout: 120))
         let result = try snapshotJSON()
         let partitions = (result["layout"] as? [String: Any])?["partitions"] as? [[String: Any]]
         XCTAssertTrue(partitions?.contains { $0["kind"] as? String == "linux" } == true)
