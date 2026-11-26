@@ -96,6 +96,10 @@ public final class DeviceEngine: @unchecked Sendable {
                         saved.operation.message = differentBoot
                             ? "The device restarted after the previous operation. Current APFS and GPT metadata were inspected. Review a new plan; no old operation was repeated."
                             : "The previous worker returned after the helper restarted. Current metadata were inspected, but remaining stages were not run. Review any further changes."
+                        if differentBoot, saved.operation.currentStep == .shrinkAPFS, let step = saved.operation.apfsStep {
+                            // The next shrink starts smaller than the step this restart interrupted.
+                            try? DeviceJournal.write(["firstBudgetBytes": ShrinkSteps.budgetAfterRestart(during: step)], to: restartBudgetURL)
+                        }
                         if saved.operation.currentStep == .shrinkAPFS, let step = saved.operation.apfsStep {
                             saved.operation.message! += " The helper had started APFS shrink \(step.label.lowercased()) (\(Capacity.gb(step.fromBytes)) to \(Capacity.gb(step.targetBytes))); APFS now measures \(Capacity.gb(latest.layout.containerBytes)), and the approved target is \(Capacity.gb(saved.operation.plan.targetBytes))."
                         }
@@ -359,7 +363,8 @@ public final class DeviceEngine: @unchecked Sendable {
         let plan = saved.operation.plan
         let source = source
         var before = first
-        var budget = ShrinkSteps.startingBudget
+        let learned = (try? Data(contentsOf: restartBudgetURL)).flatMap { try? JSONDecoder().decode([String: Int64].self, from: $0) }?["firstBudgetBytes"]
+        var budget = min(ShrinkSteps.firstBudget, max(ShrinkSteps.minimumBudget, learned ?? ShrinkSteps.firstBudget))
         var number = 0
         var previousSeconds: Double?
         while before.layout.containerBytes > plan.targetBytes {
@@ -555,6 +560,9 @@ public final class DeviceEngine: @unchecked Sendable {
             throw ResizeError("An operation is active or its outcome is unknown. No new mutation is allowed.")
         }
     }
+    /// The first shrink budget learned from a device restart during a step.
+    private var restartBudgetURL: URL { directory.appendingPathComponent("restart-budget.json") }
+
     private func persist() throws {
         if let record { try DeviceJournal.write(record, to: directory.appendingPathComponent("operation.json")) }
     }
