@@ -390,9 +390,9 @@ final class StatusBadge: UIView {
             let spinner = ClockedSpinner(style: size >= 60 ? .whiteLarge : .white, color: Theme.blue)
             spinner.translatesAutoresizingMaskIntoConstraints = false
             inner = spinner
-        case .success: inner = Icon.check.view(size * 0.4, color: Theme.green, lineWidth: 2.4)
+        case .success: inner = Icon.check.view(size * 0.47, color: Theme.green, lineWidth: 2.4)
         case .stopped: inner = Icon.circleStop.view(size * 0.5, color: Theme.blue)
-        case .failure: inner = Icon.warning.view(size * 0.4, color: Theme.destructive, lineWidth: 2.2)
+        case .failure: inner = Icon.warning.view(size * 0.47, color: Theme.destructive, lineWidth: 2.2)
         }
         addSubview(inner)
         NSLayoutConstraint.activate([inner.centerXAnchor.constraint(equalTo: centerXAnchor), inner.centerYAnchor.constraint(equalTo: centerYAnchor)])

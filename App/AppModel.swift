@@ -43,8 +43,14 @@ final class AppModel {
     private var polling = false
     private var pollGeneration = 0
     private var editRevision: UUID?
+    /// Only in the app installed without DFU, which obtains storage access by itself.
+    let access: StorageAccess?
+    /// `.getting` and `.failed` have their own pages, before any storage is shown.
+    private(set) var accessPhase = StorageAccess.Phase.ready
+    private var accessBegun = false
 
-    init() {
+    init(access: StorageAccess? = nil) {
+        self.access = access
         let acknowledged = UserDefaults.standard.string(forKey: "acknowledgedOperation").flatMap(UUID.init(uuidString:))
         machine = WorkflowMachine(acknowledgedOperationID: acknowledged)
         #if targetEnvironment(simulator)
@@ -54,7 +60,7 @@ final class AppModel {
         service = HTTPResizeService(baseURL: url ?? URL(string: "http://127.0.0.1:8472")!)
         #else
         isSimulator = false
-        service = LocalSocketResizeService()
+        service = LocalSocketResizeService(elevate: access.map { access in { access.privileged($0) } })
         #endif
     }
 
@@ -141,7 +147,11 @@ final class AppModel {
     // MARK: Connection
 
     func connect() {
-        guard !polling else { return }
+        if let access, !accessBegun {
+            accessBegun = true
+            access.begin(retry: false) { [weak self] in self?.accessChanged($0) }
+        }
+        guard accessPhase == .ready, !polling else { return }
         polling = true
         pollGeneration += 1
         poll(pollGeneration)
@@ -150,6 +160,14 @@ final class AppModel {
     /// that stays idle for a few seconds. The connection is dropped here, so the first
     /// request after coming back opens a new one instead of failing on the old one
     /// (which showed the reconnecting page for a moment and left the size editor).
+    private func accessChanged(_ phase: StorageAccess.Phase) {
+        accessPhase = phase
+        notify()
+        if phase == .ready { connect() }
+    }
+    /// After a failed attempt: the user asked for another.
+    func retryAccess() { access?.begin(retry: true) { [weak self] in self?.accessChanged($0) } }
+
     func disconnectUI() { polling = false; pollGeneration += 1; service.disconnect() }
 
     private func poll(_ generation: Int) {

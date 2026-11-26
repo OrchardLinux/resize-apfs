@@ -109,6 +109,11 @@ struct Pages {
 
     func build() -> [UIView] {
         var views: [UIView] = []
+        switch model.accessPhase {
+        case .getting: return accessGetting()
+        case .failed: return accessFailed()
+        case .ready: break
+        }
         switch model.state {
         case .loading: views += connection()
         case .overview: views += overview()
@@ -201,12 +206,30 @@ struct Pages {
                             Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityTraits = .header
         let message = model.isSimulator ? "Start the independent Mac service, then return here. The app reconnects automatically."
-                                        : (model.connectionMessage ?? "Waiting for the storage helper. The app reconnects automatically.")
-        var views: [UIView] = [statusHeading(StatusBadge(.working, size: m.regular ? 68 : 64), heading, [message])]
+                                        // The helper's own messages name the DFU boot; without DFU the app starts it.
+                                        : (model.access == nil ? model.connectionMessage : nil) ?? "Waiting for the storage helper. The app reconnects automatically."
+        var views: [UIView] = [statusHeading(StatusBadge(.working, size: m.badge), heading, [message])]
         if model.isSimulator {
             views.append(section(m, "Mock service", Card(m, spacing: 8, [label("./scripts/mock-server.sh", Theme.mono(m.row)), caption("http://127.0.0.1:8472")])))
         }
         return views
+    }
+
+    // MARK: Storage access (the app installed without DFU)
+
+    private func accessGetting() -> [UIView] {
+        let heading = label("Getting storage access", Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
+        heading.accessibilityIdentifier = "gettingStorageAccess"
+        heading.accessibilityTraits = .header
+        return [statusHeading(StatusBadge(.working, size: m.badge), heading,
+                              ["The screen goes dark once and your open apps close. Unlock the device when it comes back."])]
+    }
+
+    private func accessFailed() -> [UIView] {
+        let heading = label("Couldn’t get storage access", Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
+        heading.accessibilityIdentifier = "storageAccessFailed"
+        heading.accessibilityTraits = .header
+        return [statusHeading(StatusBadge(.failure, size: m.badge), heading, ["Your storage was not changed."])]
     }
 
     // MARK: Storage overview
@@ -376,7 +399,7 @@ struct Pages {
         if shrink == nil {
             lines.append(op?.currentStep?.isResize == true ? "This may take many minutes." : "Checking the requested storage changes.")
         }
-        var views: [UIView] = [statusHeading(StatusBadge(.working, size: m.regular ? 68 : 64), heading, lines)]
+        var views: [UIView] = [statusHeading(StatusBadge(.working, size: m.badge), heading, lines)]
         if let op, let shrink {
             views.append(ShrinkProgressView(m, shrink, step: op.apfsStep, last: op.onLastShrinkStep))
         }
@@ -450,7 +473,7 @@ struct Pages {
         let heading = label(success ? "Completed" : byUser ? "Resizing stopped" : unknown ? "Couldn’t verify the result" : "Changes could not be completed",
                             Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityIdentifier = success ? "operationCompleted" : "operationStopped"
-        let top = statusHeading(StatusBadge(success ? .success : byUser ? .stopped : .failure, size: 52), heading,
+        let top = statusHeading(StatusBadge(success ? .success : byUser ? .stopped : .failure, size: m.badge), heading,
                                 [op.message ?? "Inspect the operation status before continuing."])
         var rows: [UIView] = [PartitionBar(m, layout: layout, labels: false)]
         if layout.containerBytes == layout.backingBytes {
@@ -519,6 +542,11 @@ struct Pages {
     }
 
     private func actions() -> [UIView] {
+        switch model.accessPhase {
+        case .getting: return []
+        case .failed: return [ActionButton(title: "Try again", identifier: "tryAgain") { [model] in model.retryAccess() }]
+        case .ready: break
+        }
         switch model.state {
         case .overview:
             var views: [UIView] = []

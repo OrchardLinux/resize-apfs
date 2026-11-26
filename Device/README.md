@@ -151,35 +151,69 @@ use the system's. The helper's second search path is `/private/var/ResizeAPFS/Re
 on iOS 12.0-12.1 every helper command needs the app installed, which the route guarantees by
 copying the app before the first helper command and removing it after the last.
 
-## Without DFU (Dopamine route)
+## Without DFU
 
-`scripts/dopamine_route.py` runs the checkra1n route's session on a device jailbroken with
-[Dopamine](https://github.com/opa334/Dopamine), with the iOS 15+ payload (`out/device`). The
-launcher downloads the pinned `Dopamine.ipa` (3.0.13, ad-hoc signed) into Orchard's cache and
-asks the user to confirm Developer Mode is on. On a Mac whose Xcode is signed in,
-`scripts/xcode_signing.py` signs it with that account: Xcode builds a one-file stub app with
-automatic signing for the connected device (registering it and making the profile), the stub's
-profile, entitlements and certificate sign Dopamine as `dev.orchard.dopamine.<team>`, and
-`devicectl` installs it. Otherwise `scripts/sideload.py` signs and installs it with the pinned xtool (2.0.0-beta.2; AppImage on Linux, notarized app on macOS, run with
-`XTL_CLI=1`): `xtool auth login` once, in the user's terminal, then `xtool install --usb --udid`,
-which registers the device, makes the App ID (`XTL-<account>.com.opa334.Dopamine`, the same on
-every signing) and profile, signs and installs. The expiry is kept in Orchard's cache; a
-still-valid copy is not signed again (on a Mac, devicectl also confirms it is still installed).
-Signing happens only on the user's computer with their account; releases never contain a
-team-signed Dopamine.
+One app, installed with the user's Apple ID: the official [Dopamine](https://github.com/opa334/Dopamine)
+release with Resize APFS in it. On the device it shows only Resize APFS.
 
-Dopamine unpacks the Procursus bootstrap bundled in the app (`bootstrap_<version>.tar.zst`) on a
-device's first jailbreak, without checking it. Its own copy has no SSH server, so before signing,
-`sideload.py` replaces it with Procursus's `bootstrap-ssh` of the same version (pinned): the same
-files plus OpenSSH, which Dopamine starts with its other launch daemons after each jailbreak
-(port 22). A device already bootstrapped by another copy needs OpenSSH from Sileo or Zebra once.
-Root has no password there, so the session logs in as `mobile` with the password the user set
-when jailbreaking (Dopamine requires one; the bootstrap's `alpine` is tried first, silently) and runs every command as
-root through `/var/jb/usr/bin/sudo -k -S`. sudo reads the password from the first input line,
-one byte at a time, so a copied file follows it unread. The bootstrap's tools come first on
-`PATH`; stock iOS has no `mkdir` or `cat`.
+### What is pinned, and what we add
 
-Dopamine trusts every program it sees started, so the ad-hoc signed app and helper run
-unchanged. Files go to `/private/var/ResizeAPFS`, as on iOS 12-14; nothing is installed under
-`/var/jb`. The iOS 15+ helper therefore also carries the two registration entitlements
-(`--register-app` / `--unregister-app`). Not yet run on a device.
+`scripts/tools.py` pins `Dopamine.ipa` (3.0.13) by URL, size and SHA-256; the launcher downloads
+it into Orchard's cache. Nothing of Dopamine is rebuilt, patched in its code or removed.
+`scripts/embed.py` changes three things on the user's computer, before signing:
+
+- the executable loads one more library, `Frameworks/ResizeAccess.dylib` (a load command added
+  in the unused space after the existing ones);
+- `Info.plist` loses Dopamine's scene configuration, so its app delegate makes no window, and
+  takes the name, icon, launch screen and fonts of Resize APFS;
+- the Resize APFS resources and `resize-helper.payload` are added to the bundle.
+
+`ResizeAccess.dylib` (`scripts/build-device.sh`, in `out/device/access`) is the app's own
+interface, the same sources as `ResizeAPFS.app` without `AppDelegate.swift`, plus
+`Access/AccessBridge.m`. All it uses of Dopamine is in `Access/DopamineInterface.h`: two classes,
+seven methods, looked up by name at run time. `embed.py` refuses a Dopamine release whose
+executable lacks one of those names, and a test keeps its list and the header the same.
+
+**Moving to a newer Dopamine:** change the pin in `tools.py`, run the release tests (the
+interface check runs against the real file at the next launch), then try it on a device.
+
+### On the device
+
+`App/StorageAccess.swift` runs when the app opens:
+
+1. Access is there (`isJailbroken`): go on to 3.
+2. Otherwise the app shows **Getting storage access** and runs Dopamine's `DOJailbreaker`
+   (`runWithError:…`, then `finalize`, which restarts the screen). No package manager is
+   installed and no password is set: those are choices of Dopamine's interface, which never runs.
+   An attempt that fails, or that the device did not survive, is remembered: the next launch
+   shows **Couldn't get storage access** with **Try again** instead of trying again by itself.
+   Older devices whose home screen has to restart once first (Dopamine's "contiguous mapping
+   workaround") do that once; the user opens the app again.
+3. As root and outside the sandbox (`runAsRoot:` and `runUnsandboxed:`), the app puts the helper
+   at `/private/var/ResizeAPFS/resize-helper` and its launch daemon at
+   `/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist`, unless both are there
+   unchanged. Dopamine loads that folder's daemons with every screen restart, so the helper
+   starts by itself; it opens the app once the device is unlocked. A helper that is resizing
+   is never replaced.
+4. The app reads the helper's token and connects to its socket inside the same kind of block,
+   then uses the open connection as usual. The helper runs with `--embedded IDENTIFIER PROCESS`:
+   it accepts only root callers and opens the app by its bundle identifier.
+
+The helper travels in the bundle with `RESIZE-APFS-HELPER\n` in front of it: signing the app
+with an Apple ID re-signs every program in it, which would cost the helper its entitlements.
+
+### Signing and installing
+
+The launcher asks the user to confirm Developer Mode is on. On a Mac whose Xcode is signed in,
+`scripts/xcode_signing.py` signs the app with that account: Xcode builds a one-file stub app
+with automatic signing for the connected device (registering it and making the profile), the
+stub's profile, entitlements and certificate sign the app as `dev.orchard.dopamine.<team>`, and
+`devicectl` installs it. Otherwise `scripts/sideload.py` signs and installs it with the pinned
+xtool (2.0.0-beta.2; AppImage on Linux, notarized app on macOS, run with `XTL_CLI=1`):
+`xtool auth login` once, in the user's terminal, then `xtool install --usb --udid`, which
+registers the device, makes the App ID (`XTL-<account>.com.opa334.Dopamine`, the same on every
+signing) and profile, signs and installs. Both identifiers are the ones earlier releases
+signed the plain Dopamine with, so the app replaces that one in place. The expiry is kept in
+Orchard's cache; a still-valid copy of the same app is not signed again (on a Mac, devicectl
+also confirms it is still installed). Signing happens only on the user's computer with their
+account; releases never contain anything team-signed.

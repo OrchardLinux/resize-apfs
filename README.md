@@ -20,7 +20,7 @@ open Terminal in the `ResizeAPFS-v…` folder. Then pick the method for your dev
 | --- | --- | --- |
 | **DFU** (palera1n) | A8 to A11 | 15 or later |
 | **DFU** (checkra1n) | A7 to A11 | 12 to 14 |
-| **Dopamine**, no DFU | A8 to A13 | 15.0 to 18.7.1, 26.0 to 26.0.1 |
+| **Without DFU** | A8 to A13 | 15.0 to 18.7.1, 26.0 to 26.0.1 |
 | | A14 and later | 15.0 to 17.3.1 |
 
 ### Via DFU (checkra1n / palera1n)
@@ -33,21 +33,24 @@ open Terminal in the `ResizeAPFS-v…` folder. Then pick the method for your dev
 If the boot fails, enter DFU and run it again; it often takes a few tries. Stuck at
 the Apple logo: unplug the cable briefly. Close browsers that use WebUSB first.
 
-### Via Dopamine
+### Without DFU
 
 1. Turn on Developer Mode: **Settings > Privacy & Security > Developer Mode**. The
    device restarts; confirm **Turn On**.
 2. Connect the device, unlock it and trust the computer.
-3. Run `./resize-apfs boot --dopamine` and press Enter at the Developer Mode question.
+3. Run `./resize-apfs boot --no-dfu` and press Enter at the Developer Mode question.
 4. Sign in with your Apple ID when asked; it goes only to Apple. On a Mac signed in
    to Xcode, that account is used.
 5. Trust your Apple ID on the device: **Settings > General > VPN & Device Management**.
-6. Open Dopamine and tap **Jailbreak**. When it asks for a package manager, select
-   **Sileo**, then set a password.
-7. Enter that password in the terminal. Resize APFS opens by itself.
-8. When you are done, type `done` in the terminal to remove the app.
+6. Open Resize APFS. It gets storage access by itself: the screen goes dark once;
+   unlock the device when it comes back.
 
-After a restart, tap **Jailbreak** in Dopamine again before the next session.
+The device needs an internet connection for step 6. After a restart of the device,
+just open Resize APFS again. A free Apple ID signs the app for 7 days; run step 3
+again when it stops opening.
+
+Storage access comes from [Dopamine](https://github.com/opa334/Dopamine), which the
+app carries inside.
 
 ### In the app
 
@@ -59,7 +62,7 @@ device until it is done.
 
 | Device | iOS/iPadOS | Method |
 | --- | --- | --- |
-| iPhone XR | 18.3.2 | Dopamine |
+| iPhone XR | 18.3.2 | Without DFU |
 | iPhone X (d221) | 16.7 | DFU (palera1n), Linux host |
 | iPad (6th generation) | 17.7.11 | DFU (palera1n) |
 | iPad mini 4 (J96) | 15.8.3 | DFU (palera1n), Linux host |

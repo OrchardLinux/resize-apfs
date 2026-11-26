@@ -2,151 +2,19 @@ import hashlib
 import io
 import os
 import pathlib
-import shlex
-import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import checkra1n_route  # noqa: E402
 import dopamine_route  # noqa: E402
 import tools  # noqa: E402
-
-
-class Recorder:
-    """Records each SSH call's remote command line, its input and the ssh options."""
-
-    def __init__(self, failing=()):
-        self.argvs, self.commands, self.inputs, self.failing = [], [], [], failing
-
-    def __call__(self, argv, **kwargs):
-        self.argvs.append(argv)
-        self.commands.append(argv[-1])
-        self.inputs.append(kwargs.get('input'))
-        code = 1 if any(f in argv[-1] for f in self.failing) else 0
-        return subprocess.CompletedProcess(argv, code, b'', b'denied' if code else b'')
-
-
-def unwrap(command):
-    """The script inside `sudo -k -S -p '' /var/jb/bin/sh -c SCRIPT`."""
-    words = shlex.split(command)
-    assert words[:6] == [dopamine_route.SUDO, '-k', '-S', '-p', '', dopamine_route.SHELL] and words[6] == '-c', words
-    return words[7]
-
-
-class SessionTests(unittest.TestCase):
-    def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary.cleanup)
-        self.work = pathlib.Path(self.temporary.name)
-        app = self.work / 'payload/ResizeAPFS.app'
-        app.mkdir(parents=True)
-        (app / 'ResizeAPFS').write_bytes(b'binary')
-        (app / 'ResizeAPFS').chmod(0o755)
-        (app / 'Info.plist').write_bytes(b'plist')
-        (self.work / 'payload/resize-helper').write_bytes(b'helper')
-        self.app, self.helper = checkra1n_route.payload(self.work / 'payload')
-
-    def test_logs_in_as_mobile_on_port_22(self):
-        recorder = Recorder()
-        dopamine_route.session_for(self.work, 'alpine', run=recorder).sh('true', 'Test')
-        argv = recorder.argvs[0]
-        self.assertEqual(argv[-2], 'mobile@iphone')
-        proxy = next(o for o in argv if o.startswith('ProxyCommand='))
-        self.assertEqual(shlex.split(proxy.split('=', 1)[1])[-1], '22')
-
-    def test_every_command_runs_as_root_through_sudo_with_the_password_first(self):
-        recorder = Recorder()
-        session = dopamine_route.session_for(self.work, 'secret', run=recorder)
-        session.put_file(self.helper, '/private/var/ResizeAPFS/resize-helper', 0o755)
-        script = unwrap(recorder.commands[0])
-        self.assertTrue(script.startswith(f'PATH={dopamine_route.PATH}; export PATH; '), script)
-        self.assertIn('cat > /private/var/ResizeAPFS/resize-helper && chmod 755', script)
-        # sudo reads the password line; the file follows it unread.
-        self.assertEqual(recorder.inputs[0], b'secret\nhelper')
-
-    def test_a_command_without_input_still_gets_the_password(self):
-        recorder = Recorder()
-        dopamine_route.session_for(self.work, 'alpine', run=recorder).sh('true', 'Test')
-        self.assertEqual(recorder.inputs[0], b'alpine\n')
-
-    def test_the_bootstrap_tools_come_first_on_the_path(self):
-        self.assertTrue(dopamine_route.PATH.startswith('/var/jb/usr/bin:/var/jb/bin:'))
-
-    def test_install_writes_only_to_the_session_folder(self):
-        recorder = Recorder()
-        checkra1n_route.install(dopamine_route.session_for(self.work, 'alpine', run=recorder), self.app, self.helper)
-        for command in recorder.commands:
-            script = unwrap(command).split('export PATH; ', 1)[1]
-            for word in shlex.split(script.replace(';', ' ').replace('&&', ' ')):
-                if word.startswith('/'):
-                    self.assertTrue(word.startswith('/private/var/ResizeAPFS'), script)
-        self.assertEqual(unwrap(recorder.commands[-1]).split('export PATH; ', 1)[1],
-                         '/private/var/ResizeAPFS/resize-helper --register-app /private/var/ResizeAPFS/ResizeAPFS.app')
-
-    def test_the_app_goes_to_the_jailbreak_roots_applications_folder(self):
-        recorder = Recorder()
-        def run(argv, **kwargs):
-            recorder(argv, **kwargs)
-            out = b'/private/preboot/ABC/dopamine-x/procursus\n' if 'realpath /var/jb' in argv[-1] else b''
-            return subprocess.CompletedProcess(argv, 0, out, b'')
-        session = dopamine_route.session_for(self.work, 'alpine', run=run)
-        target = dopamine_route.app_path(session)
-        self.assertEqual(target, '/private/preboot/ABC/dopamine-x/procursus/Applications/ResizeAPFS.app')
-        checkra1n_route.install(session, self.app, self.helper, target)
-        checkra1n_route.start_helper(session, target)
-        scripts = [unwrap(c).split('export PATH; ', 1)[1] for c in recorder.commands]
-        self.assertIn(f'/private/var/ResizeAPFS/resize-helper --register-app {target}', scripts)
-        self.assertTrue(any(f'--ui-path {target}/ResizeAPFS' in s for s in scripts))
-        self.assertTrue(any(f'cat > {target}/ResizeAPFS && chmod 755' in s for s in scripts))
-        self.assertTrue(any('cat > /private/var/ResizeAPFS/resize-helper' in s for s in scripts), 'the helper stays in the session folder')
-
-    def test_cleanup_removes_the_app_from_the_jailbreak_root_too(self):
-        recorder = Recorder()
-        session = dopamine_route.session_for(self.work, 'alpine', run=recorder)
-        target = '/private/preboot/ABC/procursus/Applications/ResizeAPFS.app'
-        checkra1n_route.finish(session, target)
-        self.assertEqual(unwrap(recorder.commands[-1]).split('export PATH; ', 1)[1],
-                         f'/private/var/ResizeAPFS/resize-helper --unregister-app {target}; rm -rf {target} /private/var/ResizeAPFS')
-        recorder = Recorder()
-        checkra1n_route.remove_leftovers(dopamine_route.session_for(self.work, 'alpine', run=recorder), target)
-        script = unwrap(recorder.commands[0])
-        self.assertLess(script.index(target), script.index('/var/root/ResizeAPFS/session'), 'the new location first, while the helper is there')
-
-    def test_the_server_is_named_in_errors(self):
-        session = dopamine_route.session_for(self.work, 'alpine', run=lambda argv, **k: subprocess.CompletedProcess(argv, 255, '', 'refused'))
-        with self.assertRaisesRegex(ValueError, "Dopamine's SSH server did not accept the connection: refused"):
-            session.open()
-
-
-class FakeSession:
-    def __init__(self, password, accepted, error='Permission denied (publickey,password).'):
-        self.password, self.accepted, self.error = password, accepted, error
-
-    def open(self):
-        if self.password != self.accepted:
-            raise ValueError("Dopamine's SSH server did not accept the connection: " + self.error)
-
-
-class ConnectTests(unittest.TestCase):
-    def test_the_default_password_is_tried_first(self):
-        session = dopamine_route.connect('w', secret=lambda prompt: self.fail('asked'),
-                                         open_session=lambda p: FakeSession(p, 'alpine'))
-        self.assertEqual(session.password, 'alpine')
-
-    def test_a_refused_default_asks_for_the_users_password(self):
-        with mock.patch('sys.stdout', io.StringIO()):
-            session = dopamine_route.connect('w', secret=lambda prompt: 'mine', open_session=lambda p: FakeSession(p, 'mine'))
-        self.assertEqual(session.password, 'mine')
-
-    def test_other_failures_do_not_ask_for_a_password(self):
-        with self.assertRaisesRegex(ValueError, 'Connection refused'):
-            dopamine_route.connect('w', secret=lambda prompt: self.fail('asked'),
-                                   open_session=lambda p: FakeSession(p, 'mine', error='Connection refused'))
+from access_fixtures import make_ipa, make_payload  # noqa: E402
 
 
 class FakeSigner:
@@ -160,26 +28,51 @@ class FakeSigner:
         self.calls.append((ipa, udid))
 
 
-class PrepareTests(unittest.TestCase):
-    def test_without_xcode_developer_mode_then_signing_are_confirmed(self):
-        asked = []
+class RunTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = pathlib.Path(self.temporary.name)
+        self.ipa = make_ipa(self.root / 'Dopamine.ipa')
+        self.payload = make_payload(self.root / 'payload')
+
+    def run_route(self, signer, devices, asked):
         out = io.StringIO()
         with mock.patch('sys.stdout', out):
-            dopamine_route.prepare('/cache/files/sha256-abc', ask=asked.append, signer=FakeSigner(False),
-                                   devices=lambda: self.fail('no device needed'))
-        self.assertEqual(len(asked), 2)
-        self.assertIn('Developer Mode', asked[0])
-        self.assertIn('Sign Dopamine with your Apple ID', asked[1])
-        self.assertIn('/cache/files/sha256-abc', asked[1])
-        self.assertIn('tap Jailbreak', out.getvalue())
+            dopamine_route.run(self.ipa, ask=asked.append, signer=signer, devices=devices,
+                               work=self.root / 'work', payload=self.payload)
+        return out.getvalue()
 
-    def test_with_xcode_the_launcher_signs_for_the_connected_device(self):
+    def test_the_launcher_signs_for_the_connected_device_and_says_to_open_the_app(self):
         asked, signer = [], FakeSigner(True)
-        with mock.patch('sys.stdout', io.StringIO()):
-            dopamine_route.prepare('/ipa', ask=asked.append, signer=signer, devices=lambda: [(3, 'UDID-1')])
+        said = self.run_route(signer, lambda: [(3, 'UDID-1')], asked)
         self.assertEqual(len(asked), 1)
         self.assertIn('Developer Mode', asked[0])
-        self.assertEqual(signer.calls, [('/ipa', 'UDID-1')])
+        self.assertEqual(signer.calls, [(self.ipa, 'UDID-1')])
+        self.assertIn('Open Resize APFS on the device', said)
+
+    def test_where_nothing_can_sign_the_prepared_app_is_left_for_the_user(self):
+        asked = []
+        self.run_route(FakeSigner(False), lambda: self.fail('no device needed'), asked)
+        self.assertEqual(len(asked), 2)
+        self.assertIn('Sign Resize APFS with your Apple ID', asked[1])
+        prepared = self.root / 'work/ResizeAPFS.ipa'
+        self.assertIn(str(prepared), asked[1])
+        with zipfile.ZipFile(prepared) as archive:
+            self.assertIn('Payload/Dopamine.app/Frameworks/ResizeAccess.dylib', archive.namelist())
+
+    def test_nothing_is_asked_when_the_folder_has_no_app(self):
+        asked = []
+        with self.assertRaisesRegex(ValueError, 'out/device/access'):
+            dopamine_route.run(self.ipa, ask=asked.append, signer=FakeSigner(True), payload=self.root / 'missing')
+        self.assertEqual(asked, [])
+
+    def test_the_user_never_reads_the_word_jailbreak(self):
+        asked = []
+        said = self.run_route(FakeSigner(False), None, asked)
+        for text in asked + [said]:
+            self.assertNotIn('jailbreak', text.lower())
+            self.assertNotIn('Dopamine', text)
 
     def test_exactly_one_device_must_be_connected(self):
         with self.assertRaisesRegex(ValueError, 'No iOS device'):

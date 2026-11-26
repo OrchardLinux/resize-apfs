@@ -14,6 +14,12 @@ payload's individual components remain applicable.
 https://github.com/palera1n/palera1n
 https://github.com/palera1n/jbinit
 
+Without DFU, the app the user installs is the official Dopamine release (MIT, Copyright
+2023-2024 Lars Fröder) with Resize APFS added on the user's computer. Dopamine is downloaded
+from its own release page, not included in our release ZIP; its license and those of its
+components stay in the app bundle as its authors ship them.
+https://github.com/opa334/Dopamine
+
 Linux host image tools use `libdmg-hfsplus` under GPL-3.0:
 https://github.com/planetbeing/libdmg-hfsplus
 

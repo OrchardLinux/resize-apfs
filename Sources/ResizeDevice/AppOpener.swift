@@ -13,6 +13,8 @@ public final class AppOpener: @unchecked Sendable {
     let appPath: String
     let executableName: String
     let registerWithUICache: Bool
+    /// Set for an app known by its identifier instead of its path.
+    let identifier: String?
 
     /// `executable`: the app's executable inside its bundle. `registerWithUICache`:
     /// the palera1n route, where nothing has registered the app yet; the iOS 12-14
@@ -21,12 +23,22 @@ public final class AppOpener: @unchecked Sendable {
         appPath = (executable as NSString).deletingLastPathComponent
         executableName = (executable as NSString).lastPathComponent
         self.registerWithUICache = registerWithUICache
+        identifier = nil
+    }
+
+    /// An installed app whose path changes with every install (the app without DFU):
+    /// its bundle identifier and the name of its process.
+    public init(identifier: String, processName: String) {
+        appPath = ""
+        executableName = processName
+        registerWithUICache = false
+        self.identifier = identifier
     }
 
     public func start(log: @escaping (String) -> Void = { print($0); fflush(stdout) }) {
         #if os(iOS)
         Thread.detachNewThread { [self] in
-            guard let identifier = Bundle(path: appPath)?.bundleIdentifier else {
+            guard let identifier = identifier ?? Bundle(path: appPath)?.bundleIdentifier else {
                 log("App opener: no bundle identifier in \(appPath)")
                 return
             }
