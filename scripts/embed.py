@@ -1,12 +1,14 @@
-"""Resize APFS inside the pinned Dopamine app: one app for the route without DFU.
+"""An app inside the pinned Dopamine app: one app for the route without DFU. Resize APFS
+here; the Orchard installer (tools repository) uses this file from a checkout of this one.
 
 The official Dopamine release (tools.py pins it by size and SHA-256) stays as it is, except:
 
-- its executable gets one more library to load, `Frameworks/ResizeAccess.dylib`: the Resize
-  APFS interface plus the few calls into Dopamine it makes (Access/DopamineInterface.h);
+- its executable gets one more library to load, the payload's one `*.dylib` in `Frameworks`
+  (`ResizeAccess.dylib` here): the app's interface plus the few calls into Dopamine it makes
+  (Access/DopamineInterface.h);
 - Info.plist loses Dopamine's scene configuration, so Dopamine's own interface never appears,
   and takes the name, icon, launch screen and fonts of Resize APFS;
-- the Resize APFS resources and the storage helper (`resize-helper.payload`) are added.
+- the app's resources and what its helper needs (`*.payload`) are added.
   Dopamine's own files all stay, its image catalog too: its code draws from it.
 
 Nothing of Dopamine is rebuilt or removed. Everything here runs on the user's computer, on
@@ -21,6 +23,13 @@ import zipfile
 from image_format import require
 
 LIBRARY = '@executable_path/Frameworks/ResizeAccess.dylib'
+
+
+def library(payload):
+    """The payload's one library: (its file, the path the executable loads it by)."""
+    found = sorted(pathlib.Path(payload).glob('*.dylib'))
+    require(len(found) == 1, 'The app payload does not hold exactly one library.')
+    return found[0], '@executable_path/Frameworks/' + found[0].name
 # What Access/AccessBridge.m calls in Dopamine, as Access/DopamineInterface.h declares it.
 # A Dopamine release without one of these names is refused instead of failing on the device.
 INTERFACE = ('DOJailbreaker', 'contiguousMappingWorkaroundNeeded', 'applyContiguousMappingWorkaround',
@@ -133,9 +142,10 @@ def merge(app, payload):
     executable = app / info['CFBundleExecutable']
     data = executable.read_bytes()
     check_interface(data)
-    executable.write_bytes(add_library(data))
+    source, loaded = library(payload)
+    executable.write_bytes(add_library(data, loaded))
     (app / 'Frameworks').mkdir(exist_ok=True)
-    shutil.copyfile(payload / 'ResizeAccess.dylib', app / 'Frameworks/ResizeAccess.dylib')
+    shutil.copyfile(source, app / 'Frameworks' / source.name)
     shutil.copytree(payload / 'Resources', app, dirs_exist_ok=True)
     # Dopamine keeps its launch screen in a language folder, which iOS would prefer to ours.
     launch = ours.get('UILaunchStoryboardName', '') + '.storyboardc'
@@ -154,9 +164,9 @@ def merge(app, payload):
     (app / 'Info.plist').write_bytes(plistlib.dumps(info))
 
 
-def prepared_ipa(ipa, work, payload):
-    """`work`/ResizeAPFS.ipa: the Dopamine `ipa` with Resize APFS in it, ready to be signed."""
+def prepared_ipa(ipa, work, payload, name='ResizeAPFS'):
+    """`work`/`name`.ipa: the Dopamine `ipa` with the app in it, ready to be signed."""
     work = pathlib.Path(work)
     app, modes = unpack(ipa, work / 'unpacked')
     merge(app, payload)
-    return pack(work / 'unpacked', work / 'ResizeAPFS.ipa', modes)
+    return pack(work / 'unpacked', work / (name + '.ipa'), modes)

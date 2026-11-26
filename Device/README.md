@@ -169,8 +169,12 @@ it into Orchard's cache. Nothing of Dopamine is rebuilt, patched in its code or 
 - the Resize APFS resources and `resize-helper.payload` are added to the bundle.
 
 `ResizeAccess.dylib` (`scripts/build-device.sh`, in `out/device/access`) is the app's own
-interface, the same sources as `ResizeAPFS.app` without `AppDelegate.swift`, plus
-`Access/AccessBridge.m`. All it uses of Dopamine is in `Access/DopamineInterface.h`: three
+interface, the same sources as `ResizeAPFS.app` without `AppDelegate.swift`, plus the `Access`
+folder: `AccessBridge.m` and `StorageAccess.swift`. The Orchard installer (tools repository)
+is the same kind of app and compiles that folder and `scripts/embed.py` from a checkout of
+this repository; what differs between the two apps is `StorageAccess.Configuration`
+(`App/EmbeddedApp.swift` here). Both carry the same identifier for iOS, so installing one
+replaces the other on a device, and each removes the other's launch daemon. All it uses of Dopamine is in `Access/DopamineInterface.h`: three
 classes, eight methods and one setting, looked up by name at run time. `embed.py` refuses a
 Dopamine release whose executable lacks one of those names, and a test keeps its list and the
 header the same.

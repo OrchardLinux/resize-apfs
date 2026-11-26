@@ -23,13 +23,13 @@ DEVELOPER_MODE = ('Turn on Developer Mode on the device: Settings > Privacy & Se
                   'then restart it and confirm "Turn On".\n'
                   'Press Enter when Developer Mode is on. ')
 # Where xtool has no release: the user signs and installs it with a tool of their own.
-SIGN = ('Sign Resize APFS with your Apple ID and install it on the device, with Xcode, Sideloadly, '
+SIGN = ('Sign {app} with your Apple ID and install it on the device, with Xcode, Sideloadly, '
         'AltStore or another sideloading tool. The app:\n'
-        '  {}\n'
+        '  {path}\n'
         'A free Apple ID signs it for 7 days; sign it again when it stops opening.\n'
-        'Press Enter when Resize APFS is on the device. ')
-OPEN = ('Open Resize APFS on the device. It gets storage access by itself: the screen goes dark once; '
-        'unlock the device when it comes back.')
+        'Press Enter when {app} is on the device. ')
+OPEN = ('Open {app} on the device and tap Continue. The screen restarts; unlock the device when it '
+        'comes back. If {app} does not open again by itself, open it within 20 seconds.')
 
 
 def device(devices=usbmux.devices):
@@ -50,5 +50,5 @@ def run(ipa, ask=input, signer=sideload, devices=usbmux.devices, work=None, payl
     else:
         work = pathlib.Path(work or ROOT / '.work/sideload')
         work.mkdir(parents=True, exist_ok=True)
-        ask(SIGN.format(embed.prepared_ipa(ipa, work, payload)))
-    print(OPEN, flush=True)
+        ask(SIGN.format(app=sideload.APP, path=embed.prepared_ipa(ipa, work, payload, sideload.APP.replace(' ', ''))))
+    print(OPEN.format(app=sideload.APP), flush=True)

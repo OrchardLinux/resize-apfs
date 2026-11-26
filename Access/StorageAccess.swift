@@ -1,5 +1,8 @@
+// Shared by every app that is installed without DFU inside the Dopamine app: Resize APFS
+// here, the Orchard installer in the tools repository (which compiles this file and
+// AccessBridge.m from a checkout of this one). Each app brings a Configuration and its own
+// pages and start (`RAFEmbeddedApp`, App/EmbeddedApp.swift here).
 import UIKit
-import ResizeCore
 
 /// What Access/AccessBridge.m offers (its RAFAccessBridge), as Swift calls it.
 @objc protocol AccessBridge {
@@ -11,10 +14,40 @@ import ResizeCore
     func privileged(_ block: () -> Void)
 }
 
-/// Storage access for the app installed without DFU: the app obtains it by itself when it
-/// opens, installs the storage helper as a launch daemon and reaches it as root. With DFU
-/// the boot provides all of this and the app has no StorageAccess.
+/// Storage access for an app installed without DFU: the app obtains it once the user has
+/// agreed, installs its helper as a launch daemon and reaches it as root. With DFU the boot
+/// provides all of this and the app has no StorageAccess.
 final class StorageAccess: @unchecked Sendable {
+    /// What differs between the apps.
+    struct Configuration {
+        /// The app's name, for the log.
+        var name: String
+        /// The app's own folder for its note and log, in its Library/Application Support.
+        var state: String
+        /// The helper's folder on the data partition: its log and, in `run`, its socket.
+        var folder: String
+        /// The launch daemon's label; its file is this name in Dopamine's LaunchDaemons.
+        var label: String
+        /// What the app brings in its bundle (`resource`.payload) and where each goes. The
+        /// first is the helper. Inside the jailbreak root: iOS 15 and later lets launchd start
+        /// programs only from there, not from the data partition.
+        var payloads: [(resource: String, path: String)]
+        /// The helper's own arguments; where it serves and whom follow them.
+        var arguments: [String]
+        /// A file the helper holds locked while it runs, to say in the log whether it does.
+        var lock: String
+        /// What to remove when the helper is put in place: files of earlier ways to start it,
+        /// and the launch daemon of another app that shares this one's place on the device.
+        var leftovers: [String]
+
+        var helper: String { payloads[0].path }
+        var daemon: String { "/var/jb/Library/LaunchDaemons/\(label).plist" }
+        /// Where the helper publishes its socket and credentials. Not /var/run: the helper
+        /// starts early in the screen restart, and iOS empties /var/run after that, leaving
+        /// the helper listening on a socket nobody can find.
+        var ipc: String { folder + "/run" }
+    }
+    let configuration: Configuration
     /// `.start`: nothing has happened yet, the user is told what will. `.getting`: access is
     /// being obtained. `.checking`: access is there, the helper is being put in place.
     enum Phase { case ready, checking, start, getting, failed }
@@ -24,17 +57,9 @@ final class StorageAccess: @unchecked Sendable {
     /// app starts from its first page again instead of restarting the screen unasked.
     static let resumeWindow: TimeInterval = 120
 
-    static let folder = "/private/var/ResizeAPFS"
-    /// Inside the jailbreak root: iOS 15 and later lets launchd start programs only from there,
-    /// not from the data partition (where the helper's own files stay, in `folder`).
-    static let helper = "/var/jb/usr/libexec/resize-helper"
-    static let daemon = "/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist"
-    /// Where the helper publishes its socket and credentials. Not its usual /var/run folder:
-    /// the helper starts early in the screen restart, and iOS empties /var/run after that,
-    /// leaving the helper listening on a socket nobody can find.
-    static let ipc = folder + "/run"
-    /// scripts/build-device.sh puts this in front of the helper in the app bundle, so that
-    /// signing the app with an Apple ID leaves the helper's own signature alone.
+    /// The build puts this in front of every payload in the app bundle, so that signing the
+    /// app with an Apple ID leaves the payload's own signature alone (a signer re-signs every
+    /// program it finds).
     static let payloadPrefix = Data("RESIZE-APFS-HELPER\n".utf8)
 
     private let bridge: AccessBridge
@@ -50,9 +75,10 @@ final class StorageAccess: @unchecked Sendable {
     /// What happened, step by step, for whoever looks into a failure. The pages say little.
     private var logFile: URL { folder.appendingPathComponent("access.log") }
 
-    init(bridge: AccessBridge) {
+    init(bridge: AccessBridge, configuration: Configuration) {
         self.bridge = bridge
-        folder = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/ResizeAPFS")
+        self.configuration = configuration
+        folder = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/" + configuration.state)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         // Made here, as the app's user: later lines may come from root.
         if !FileManager.default.fileExists(atPath: logFile.path) { FileManager.default.createFile(atPath: logFile.path, contents: nil) }
@@ -60,7 +86,7 @@ final class StorageAccess: @unchecked Sendable {
     }
 
     func log(_ text: String) {
-        NSLog("Resize APFS: %@", text)
+        NSLog("%@: %@", configuration.name, text)
         guard let handle = try? FileHandle(forWritingTo: logFile) else { return }
         defer { handle.closeFile() }
         // The last launches are enough.
@@ -172,12 +198,12 @@ final class StorageAccess: @unchecked Sendable {
                 } catch { return "error \((error as NSError).code) \(String(cString: strerror(errno)))" }
             }
             // The helper holds this lock for as long as it runs.
-            let lock = open("/var/root/Library/ResizeAPFS/helper.lock", O_RDWR)
+            let lock = open(configuration.lock, O_RDWR)
             let running = lock < 0 ? "no lock file (\(String(cString: strerror(errno))))" : flock(lock, LOCK_EX | LOCK_NB) == 0 ? "not running" : "running"
             if lock >= 0 { flock(lock, LOCK_UN); close(lock) }
-            let arguments = (files.contents(atPath: Self.daemon).flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) } as? [String: Any])?["ProgramArguments"] ?? "?"
-            facts = "uid \(geteuid()); helper \(running), \(size(Self.helper)); daemon \(arguments); \(Self.folder): \(listing(Self.folder)); \(Self.ipc): \(listing(Self.ipc)); /var/run/resize-apfs: \(listing("/var/run/resize-apfs"))"
-            helperLog = files.contents(atPath: Self.folder + "/helper.log").flatMap { String(data: $0.suffix(600), encoding: .utf8) }
+            let arguments = (files.contents(atPath: configuration.daemon).flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) } as? [String: Any])?["ProgramArguments"] ?? "?"
+            facts = "uid \(geteuid()); helper \(running), \(size(configuration.helper)); daemon \(arguments); \(configuration.folder): \(listing(configuration.folder)); \(configuration.ipc): \(listing(configuration.ipc))"
+            helperLog = files.contents(atPath: configuration.folder + "/helper.log").flatMap { String(data: $0.suffix(600), encoding: .utf8) }
         }
         log(facts)
         log(helperLog.map { "helper.log ends: \($0)" } ?? "no helper.log")
@@ -187,7 +213,7 @@ final class StorageAccess: @unchecked Sendable {
     private func helperServing(within seconds: Int) -> Bool {
         for attempt in 0...(seconds / 2) {
             var serving = false
-            privileged { serving = FileManager.default.fileExists(atPath: Self.ipc + "/client.token") }
+            privileged { serving = FileManager.default.fileExists(atPath: configuration.ipc + "/client.token") }
             if serving { log("the helper is serving"); return true }
             if attempt < seconds / 2 { Thread.sleep(forTimeInterval: 2) }
         }
@@ -196,8 +222,8 @@ final class StorageAccess: @unchecked Sendable {
 
     // MARK: Helper
 
-    private func bundledHelper() -> Data? {
-        guard let url = Bundle.main.url(forResource: "resize-helper", withExtension: "payload"),
+    private func bundled(_ resource: String) -> Data? {
+        guard let url = Bundle.main.url(forResource: resource, withExtension: "payload"),
               let data = try? Data(contentsOf: url), data.starts(with: Self.payloadPrefix) else { return nil }
         return Data(data.dropFirst(Self.payloadPrefix.count))
     }
@@ -206,43 +232,48 @@ final class StorageAccess: @unchecked Sendable {
     /// that follows obtaining access. It opens the app once the device is unlocked.
     private func daemonPlist(identifier: String, process: String) -> Data? {
         let plist: [String: Any] = [
-            "Label": "dev.omarchy.resize-apfs",
-            "ProgramArguments": [Self.helper, "--allow-writes", "--ipc-dir", Self.ipc, "--embedded", identifier, process],
+            "Label": configuration.label,
+            "ProgramArguments": [configuration.helper] + configuration.arguments + ["--ipc-dir", configuration.ipc, "--embedded", identifier, process],
             "RunAtLoad": true, "KeepAlive": true, "ThrottleInterval": 30,
             "UserName": "root", "GroupName": "wheel",
             "ProcessType": "Interactive", "AbandonProcessGroup": true,
-            "StandardOutPath": Self.folder + "/helper.log", "StandardErrorPath": Self.folder + "/helper.log",
+            "StandardOutPath": configuration.folder + "/helper.log", "StandardErrorPath": configuration.folder + "/helper.log",
             "JetsamProperties": ["JetsamPriority": 160, "JetsamMemoryLimit": 256],
         ]
         return try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
     }
 
-    /// Puts this app's helper and its launch daemon in place unless they are there already.
-    /// `elevated`: called inside the privileged block that follows obtaining access. Nothing
-    /// is started here: the daemon starts with the next screen restart, and a running helper
-    /// keeps its own file until then (the new one replaces it by name).
+    /// Puts this app's helper, what it runs and its launch daemon in place unless they are
+    /// there already. `elevated`: called inside the privileged block that follows obtaining
+    /// access. Nothing is started here: the daemon starts with the next screen restart, and a
+    /// running helper keeps its own file until then (the new one replaces it by name).
     @discardableResult private func installHelper(elevated: Bool) -> Bool {
-        guard let payload = bundledHelper(), let identifier = Bundle.main.bundleIdentifier,
-              let process = Bundle.main.executableURL?.lastPathComponent,
-              let plist = daemonPlist(identifier: identifier, process: process) else {
-            log("this copy of the app has no storage helper")
-            return false
+        var files: [(data: Data, path: String, mode: mode_t)] = []
+        for payload in configuration.payloads {
+            guard let data = bundled(payload.resource) else {
+                log("this copy of the app lacks \(payload.resource)")
+                return false
+            }
+            files.append((data, payload.path, 0o755))
         }
+        guard let identifier = Bundle.main.bundleIdentifier, let process = Bundle.main.executableURL?.lastPathComponent,
+              let plist = daemonPlist(identifier: identifier, process: process) else { return false }
+        files.append((plist, configuration.daemon, 0o644))
         var outcome = "the privileged block did not run"
         let install = { [self] in
-            let files = FileManager.default
-            if files.contents(atPath: Self.helper) == payload && files.contents(atPath: Self.daemon) == plist {
+            let manager = FileManager.default
+            if files.allSatisfy({ manager.contents(atPath: $0.path) == $0.data }) {
                 outcome = "helper and daemon are in place"
                 return
             }
-            try? files.createDirectory(atPath: Self.folder, withIntermediateDirectories: true)
-            try? files.createDirectory(atPath: (Self.daemon as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-            try? files.createDirectory(atPath: (Self.helper as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-            // What sessions of earlier releases (over SSH) left in the folder.
-            for name in ["resize-helper", "helper.pid", "helper.log"] { try? files.removeItem(atPath: Self.folder + "/" + name) }
-            let done = chown(Self.folder, 0, 0) == 0 && chmod(Self.folder, 0o755) == 0
-                && write(payload, to: Self.helper, mode: 0o755) && write(plist, to: Self.daemon, mode: 0o644)
-            outcome = done ? "helper and daemon installed" : "could not install the storage helper, uid \(geteuid()): \(String(cString: strerror(errno)))"
+            try? manager.createDirectory(atPath: configuration.folder, withIntermediateDirectories: true)
+            for path in configuration.leftovers { try? manager.removeItem(atPath: path) }
+            var done = chown(configuration.folder, 0, 0) == 0 && chmod(configuration.folder, 0o755) == 0
+            for file in files where done {
+                try? manager.createDirectory(atPath: (file.path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                done = write(file.data, to: file.path, mode: file.mode)
+            }
+            outcome = done ? "helper and daemon installed" : "could not install the helper, uid \(geteuid()): \(String(cString: strerror(errno)))"
         }
         if elevated { install() } else { privileged(install) }
         log(outcome)
@@ -262,44 +293,20 @@ final class StorageAccess: @unchecked Sendable {
     }
 }
 
-/// The app's start inside the Dopamine app: what AppDelegate does for the app booted with
-/// DFU, begun by Access/AccessBridge.m once the host app has launched.
-@objc(RAFEmbeddedApp) final class EmbeddedApp: NSObject {
-    private static var window: UIWindow?
-    private static var model: AppModel?
-
-    @objc(startWithBridge:) static func start(bridge: AnyObject) {
-        guard window == nil else { return }
-        let model = AppModel(access: StorageAccess(bridge: unsafeBitCast(bridge, to: AccessBridge.self)))
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        if #available(iOS 13, *) { window.overrideUserInterfaceStyle = .dark }
-        window.backgroundColor = Theme.background
-        window.tintColor = Theme.blue
-        window.rootViewController = RootViewController(model: model)
+/// The window of an app inside the Dopamine app. Dopamine's app delegate answers for scenes,
+/// so iOS gives the app one even without a scene configuration in Info.plist, and shows only
+/// windows that belong to it: the window joins the scene as soon as there is one.
+enum AccessWindow {
+    static func show(_ window: UIWindow) {
         window.makeKeyAndVisible()
-        self.window = window
-        self.model = model
-        let center = NotificationCenter.default
-        // Dopamine's app delegate answers for scenes, so iOS gives the app one even without a
-        // scene configuration in Info.plist, and shows only windows that belong to it.
-        if #available(iOS 13, *) {
-            func attach(_ scene: UIScene?) {
-                guard let scene = scene as? UIWindowScene, window.windowScene == nil else { return }
-                window.windowScene = scene
-                window.frame = scene.coordinateSpace.bounds
-                window.makeKeyAndVisible()
-            }
-            attach(UIApplication.shared.connectedScenes.first { $0 is UIWindowScene })
-            center.addObserver(forName: UIScene.willConnectNotification, object: nil, queue: .main) { attach($0.object as? UIScene) }
+        guard #available(iOS 13, *) else { return }
+        func attach(_ scene: UIScene?) {
+            guard let scene = scene as? UIWindowScene, window.windowScene == nil else { return }
+            window.windowScene = scene
+            window.frame = scene.coordinateSpace.bounds
+            window.makeKeyAndVisible()
         }
-        center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            model.access?.note("active")
-            model.connect()
-        }
-        center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
-            model.access?.note("background")
-            model.disconnectUI()
-        }
-        model.connect()
+        attach(UIApplication.shared.connectedScenes.first { $0 is UIWindowScene })
+        NotificationCenter.default.addObserver(forName: UIScene.willConnectNotification, object: nil, queue: .main) { attach($0.object as? UIScene) }
     }
 }

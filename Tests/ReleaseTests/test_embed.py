@@ -134,7 +134,7 @@ class MergeTests(unittest.TestCase):
 
     def test_build_and_app_agree_on_what_precedes_the_helper(self):
         build = (ROOT / 'scripts/build-device.sh').read_text()
-        app = (ROOT / 'App/StorageAccess.swift').read_text()
+        app = (ROOT / 'Access/StorageAccess.swift').read_text()
         self.assertIn(r"printf 'RESIZE-APFS-HELPER\n'", build)
         self.assertIn(r'Data("RESIZE-APFS-HELPER\n".utf8)', app)
 

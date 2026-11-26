@@ -34,7 +34,7 @@ swiftc -I "$build" -I Sources/NativeSystem/include -L "$build" -lResizeDevice -l
 
 app="$out/ResizeAPFS.app"
 mkdir -p "$app"
-swiftc -I "$build" -L "$build" -lResizeCore App/*.swift \
+swiftc -I "$build" -L "$build" -lResizeCore App/*.swift Access/StorageAccess.swift \
   -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$app/ResizeAPFS"
 cp App/Info.plist "$app/Info.plist"
 # JetBrains Mono (SIL OFL 1.1, App/Fonts/OFL.txt ships alongside the fonts).

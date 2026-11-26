@@ -46,7 +46,7 @@ xcrun --sdk iphoneos clang -target "$target" -isysroot "$sdk" -Os -fobjc-arc -fm
 # AppDelegate.swift is the other start of the app (its own executable); here Dopamine's runs.
 xcrun --sdk iphoneos swiftc -target "$target" -sdk "$sdk" -swift-version 5 -O \
   -parse-as-library -emit-library -module-name ResizeAccess \
-  -F "$products" -framework ResizeCore $(ls App/*.swift | grep -v '^App/AppDelegate.swift$') "$build/AccessBridge.o" \
+  -F "$products" -framework ResizeCore $(ls App/*.swift | grep -v '^App/AppDelegate.swift$') Access/StorageAccess.swift "$build/AccessBridge.o" \
   -Xlinker -install_name -Xlinker @executable_path/Frameworks/ResizeAccess.dylib \
   -o "$access/ResizeAccess.dylib"
 xcrun --sdk iphoneos strip -x "$access/ResizeAccess.dylib"

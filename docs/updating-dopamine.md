@@ -4,6 +4,10 @@ The app installed without DFU is the official [Dopamine](https://github.com/opa3
 release with Resize APFS in it ([Device/README.md](../Device/README.md#without-dfu)). This
 page is for moving to a newer Dopamine release.
 
+The Orchard installer in the tools repository uses the same `Access` folder and
+`scripts/embed.py` from a checkout of this repository: a change here reaches it when it moves
+its pinned commit, and it needs the same device run.
+
 **When to update:** when a newer Dopamine supports iOS versions or devices we want, or fixes
 something we ran into. The pinned release keeps working as it is; nothing requires following
 every release.

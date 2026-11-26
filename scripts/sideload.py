@@ -37,7 +37,10 @@ from image_format import require
 MARGIN = datetime.timedelta(days=1)
 # A free Apple ID's profiles last 7 days; a paid one's longer, so this never overstates.
 VALIDITY = datetime.timedelta(days=7)
-VERIFY = ('Before opening Resize APFS the first time, trust your Apple ID on the device: Settings > General > '
+# The app's name in what the user reads. Another app using this from a checkout (the Orchard
+# installer) sets it before it calls anything here.
+APP = 'Resize APFS'
+VERIFY = ('Before opening {} the first time, trust your Apple ID on the device: Settings > General > '
           'VPN & Device Management, open your Apple ID and confirm.')
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 # The Resize APFS side of the app (scripts/build-device.sh).
@@ -162,13 +165,13 @@ def install(ipa, udid, ask=input, run=subprocess.run, root=None, payload=None, p
     key = hashlib.sha256(' '.join([identifier, tools.sha256_file(ipa), payload_key(payload)]).encode()).hexdigest()
     expires = still_signed(key, udid, root=root, run=run, identifier=identifier)
     if expires:
-        print(f'Resize APFS is installed and signed until {expires:%d %b %Y}.')
+        print(f'{APP} is installed and signed until {expires:%d %b %Y}.')
         return
     account = f"the Apple ID Xcode is signed in to ({team[1]})" if team else 'your Apple ID'
-    ask(f'Sign Resize APFS with {account} and install it on {describe(udid, run)}. Press Enter to continue. ')
+    ask(f'Sign {APP} with {account} and install it on {describe(udid, run)}. Press Enter to continue. ')
     with tempfile.TemporaryDirectory(prefix='resize-apfs-sign-') as work:
         work = pathlib.Path(work)
-        prepared = embed.prepared_ipa(ipa, work / 'prepared', payload)
+        prepared = embed.prepared_ipa(ipa, work / 'prepared', payload, APP.replace(' ', ''))
         if team:
             when = install_with_xcode(prepared, work / 'xcode', team[0], identifier, udid, run)
         else:
@@ -176,8 +179,8 @@ def install(ipa, udid, ask=input, run=subprocess.run, root=None, payload=None, p
     record = record_path(udid, root)
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(json.dumps({'expires': when.isoformat(), 'key': key}))
-    print(f'Resize APFS is installed, signed until about {when:%d %b %Y}.')
-    print(VERIFY, flush=True)
+    print(f'{APP} is installed, signed until about {when:%d %b %Y}.')
+    print(VERIFY.format(APP), flush=True)
 
 
 def install_with_xcode(prepared, work, team, identifier, udid, run=subprocess.run):
@@ -186,10 +189,10 @@ def install_with_xcode(prepared, work, team, identifier, udid, run=subprocess.ru
     profile, entitlements, sha1 = xcode_signing.provision(work / 'profile', team, udid, run)
     when = xcode_signing.expiry(profile, run)
     app = xcode_signing.resign(prepared, work / 'app', identifier, profile, entitlements, sha1, run)
-    print('Installing Resize APFS...', flush=True)
+    print(f'Installing {APP}...', flush=True)
     result = run(['xcrun', 'devicectl', 'device', 'install', 'app', '--device', udid, str(app)],
                  capture_output=True, text=True, timeout=600)
-    require(result.returncode == 0, 'Installing Resize APFS failed: ' + (result.stderr or result.stdout).strip()[-800:])
+    require(result.returncode == 0, f'Installing {APP} failed: ' + (result.stderr or result.stdout).strip()[-800:])
     return when
 
 
@@ -198,9 +201,9 @@ def install_with_xtool(prepared, udid, run=subprocess.run, provide=tools.provide
     xtool = provide('xtool')
     if not logged_in(xtool, run):
         log_in(xtool, run)
-    print('Signing and installing Resize APFS...', flush=True)
+    print(f'Signing and installing {APP}...', flush=True)
     signed_at = datetime.datetime.now(datetime.timezone.utc)
     # In this terminal: xtool may ask to trust the device or to replace a certificate.
     result = run([str(xtool), 'install', '--usb', '--udid', udid, str(prepared)], env=environment())
-    require(result.returncode == 0, f'Signing or installing Resize APFS failed (xtool exit status {result.returncode}).')
+    require(result.returncode == 0, f'Signing or installing {APP} failed (xtool exit status {result.returncode}).')
     return signed_at + VALIDITY

@@ -62,7 +62,7 @@ final class AppModel {
         #else
         isSimulator = false
         service = access.map { access in
-            LocalSocketResizeService(directory: URL(fileURLWithPath: StorageAccess.ipc), elevate: { access.privileged($0) })
+            LocalSocketResizeService(directory: URL(fileURLWithPath: access.configuration.ipc), elevate: { access.privileged($0) })
         } ?? LocalSocketResizeService()
         #endif
     }
