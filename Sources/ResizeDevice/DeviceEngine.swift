@@ -198,6 +198,20 @@ public final class DeviceEngine: @unchecked Sendable {
         }
     }
 
+    /// The user closed the page of a finished operation. Written to the journal, so the page
+    /// stays closed for every copy of the app and after a restart; an operation that still
+    /// runs, or whose outcome is unknown, is not closed.
+    public func acknowledge(_ request: AcknowledgeRequest) throws -> ServiceSnapshot {
+        try sync {
+            if let operation = record?.operation, operation.id == request.operationID,
+               operation.status == .completed || operation.status == .stopped, operation.acknowledged != true {
+                record?.operation.acknowledged = true
+                try DeviceJournal.write(record!, to: directory.appendingPathComponent("operation.json"))
+            }
+            return try currentSnapshot()
+        }
+    }
+
     public func removeSnapshot(_ request: SnapshotRequest) throws -> ServiceSnapshot { try changeSnapshot(request, remove: true) }
     public func takeSnapshot(_ request: SnapshotRequest) throws -> ServiceSnapshot { try changeSnapshot(request, remove: false) }
 

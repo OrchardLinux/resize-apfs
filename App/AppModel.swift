@@ -369,6 +369,9 @@ final class AppModel {
         do {
             try machine.acknowledge(operation)
             UserDefaults.standard.set(operation.id.uuidString, forKey: "acknowledgedOperation")
+            // The helper keeps it with the operation: this copy's own settings are not what
+            // another copy of the app, or this one installed again, reads.
+            service.acknowledge(AcknowledgeRequest(operationID: operation.id)) { _ in }
             reviewedPlan = nil; error = nil
         } catch { self.error = error.localizedDescription }
         notify()
