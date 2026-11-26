@@ -203,6 +203,18 @@ do {
         guard index + 2 < CommandLine.arguments.count else { throw ResizeError("--embedded needs the app's identifier and process name.") }
         embeddedApp = (CommandLine.arguments[index + 1], CommandLine.arguments[index + 2])
     }
+    // The helper of the app installed without DFU is a launch daemon in the folder every
+    // jailbreak reads, so a boot through DFU (palera1n) starts it too. There the device has
+    // that boot's own copy of the app and its own helper; this one must neither open the
+    // installed copy nor serve it. /cores/binpack is palera1n's overlay, mounted only by
+    // such a boot. It stays idle instead of exiting, so launchd does not start it again.
+    #if os(iOS)
+    if embeddedApp != nil, FileManager.default.fileExists(atPath: "/cores/binpack") {
+        print("Resize APFS helper: the device was started through DFU; the installed app's helper stays idle")
+        fflush(stdout)
+        while true { sleep(3600) }
+    }
+    #endif
     let session = CommandLine.arguments.contains("--session")
     let uiPath = argument("--ui-path")
     guard session == (uiPath != nil) || !isDevice else {

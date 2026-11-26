@@ -206,7 +206,9 @@ final class StorageAccess: @unchecked Sendable {
     /// that follows obtaining access. It opens the app once the device is unlocked.
     private func daemonPlist(identifier: String, process: String) -> Data? {
         let plist: [String: Any] = [
-            "Label": "dev.omarchy.resize-apfs",
+            // Its own label: the boot through DFU brings a helper job of its own, and launchd
+            // runs one job per label.
+            "Label": "dev.omarchy.resize-apfs.installed",
             "ProgramArguments": [Self.helper, "--allow-writes", "--ipc-dir", Self.ipc, "--embedded", identifier, process],
             "RunAtLoad": true, "KeepAlive": true, "ThrottleInterval": 30,
             "UserName": "root", "GroupName": "wheel",
