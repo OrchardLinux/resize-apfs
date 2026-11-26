@@ -47,6 +47,6 @@ def make_payload(folder):
     (folder / 'Resources/resize-helper.payload').write_bytes(b'RESIZE-APFS-HELPER\nhelper')
     (folder / 'Info.plist').write_bytes(plistlib.dumps({
         'CFBundleDisplayName': 'Resize APFS', 'CFBundleName': 'ResizeAPFS', 'UILaunchStoryboardName': 'LaunchScreen',
-        'UIAppFonts': ['Fonts/Mono.ttf'], 'CFBundleIdentifier': 'dev.omarchy.resize-apfs',
+        'UIAppFonts': ['Fonts/Mono.ttf'], 'CFBundleIdentifier': 'org.orchardlinux.resize-apfs',
         'CFBundleIcons': {'CFBundlePrimaryIcon': {'CFBundleIconFiles': ['AppIcon60x60'], 'CFBundleIconName': 'AppIcon'}}}))
     return folder

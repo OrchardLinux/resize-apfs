@@ -34,17 +34,17 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(xcode_signing.choose_team([team], ask=lambda p: self.fail('asked')), team)
 
     def test_one_bundle_identifier_per_team(self):
-        self.assertEqual(xcode_signing.bundle_id('ABCDE12345'), 'dev.orchard.dopamine.abcde12345')
+        self.assertEqual(xcode_signing.bundle_id('ABCDE12345'), 'org.orchardlinux.resize-apfs.abcde12345')
 
 
 class StubTests(unittest.TestCase):
     def test_the_stub_project_names_team_and_identifier(self):
         with tempfile.TemporaryDirectory() as folder:
-            project = xcode_signing.write_stub(folder, 'ABCDE12345', 'dev.orchard.dopamine.abcde12345')
+            project = xcode_signing.write_stub(folder, 'ABCDE12345', 'org.orchardlinux.resize-apfs.abcde12345')
             text = (project / 'project.pbxproj').read_text()
             scheme = next((project / 'xcshareddata/xcschemes').iterdir()).read_text()
         self.assertIn('DEVELOPMENT_TEAM = ABCDE12345;', text)
-        self.assertIn('PRODUCT_BUNDLE_IDENTIFIER = "dev.orchard.dopamine.abcde12345";', text)
+        self.assertIn('PRODUCT_BUNDLE_IDENTIFIER = "org.orchardlinux.resize-apfs.abcde12345";', text)
         self.assertNotIn('@', text.replace('// !$*UTF8*$!', ''))
         self.assertNotIn('@', scheme)
 

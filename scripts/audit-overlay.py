@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='audit-overlay-',dir=ROOT/'.work') as te
     outer_attached = apps_attached = False
     try:
         attach(image,outer); outer_attached=True
-        daemon = outer/'Library/LaunchDaemons/dev.omarchy.resize-apfs.plist'
+        daemon = outer/'Library/LaunchDaemons/org.orchardlinux.resize-apfs.helper.plist'
         config = load(daemon)
         assert config['ProgramArguments'][0] == '/cores/binpack/usr/libexec/resize-helper'
         assert ('--allow-writes' in config['ProgramArguments']) == (manifest['mode']=='write')
@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='audit-overlay-',dir=ROOT/'.work') as te
         bundles=list(apps.glob('*.app'))
         assert len(bundles)==1 and bundles[0].name=='palera1nLoader.app'
         app=bundles[0]; info=load(app/'Info.plist')
-        assert info['CFBundleIdentifier']=='dev.omarchy.resize-apfs'
+        assert info['CFBundleIdentifier']=='org.orchardlinux.resize-apfs'
         assert info['CFBundleDisplayName']=='Resize APFS'
         assert sha(app/info['CFBundleExecutable'])==manifest['deviceBuild']['files']['ResizeAPFS.app/ResizeAPFS']['sha256']
         assert app.stat().st_uid==0

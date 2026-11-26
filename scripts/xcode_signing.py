@@ -3,7 +3,7 @@ already signed in to: no new sign-in.
 
 Xcode makes the provisioning profile while it builds a tiny stub app with automatic signing
 for the connected device; the stub's profile, entitlements and certificate then sign Dopamine
-under the same identifier (`dev.orchard.dopamine.<team>`, one App ID per team, so re-signing
+under the same identifier (`org.orchardlinux.resize-apfs.<team>`, one App ID per team, so re-signing
 every 7 days reuses it). sideload.py uses this when Xcode has an account, and xtool otherwise.
 """
 import datetime
@@ -52,7 +52,7 @@ def choose_team(found, ask=input):
 
 
 def bundle_id(team):
-    return 'dev.orchard.dopamine.' + team.lower()
+    return 'org.orchardlinux.resize-apfs.' + team.lower()
 
 
 PBXPROJ = '''// !$*UTF8*$!

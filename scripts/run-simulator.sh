@@ -38,7 +38,7 @@ xcodebuild -project ResizeAPFS.xcodeproj -scheme ResizeAPFS -configuration Debug
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath .derivedData \
   -jobs 2 CODE_SIGNING_ALLOWED=NO build
 xcrun simctl install "$device" .derivedData/Build/Products/Debug-iphonesimulator/ResizeAPFS.app
-xcrun simctl launch "$device" dev.omarchy.resize-apfs
+xcrun simctl launch "$device" org.orchardlinux.resize-apfs
 developer=$(xcode-select -p)
 if [[ -d "$(dirname "$developer")/Applications/DeviceHub.app" ]]; then
   open -a "$(dirname "$developer")/Applications/DeviceHub.app" "devices://device/open?id=$device"

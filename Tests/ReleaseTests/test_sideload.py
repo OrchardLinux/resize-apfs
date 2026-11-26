@@ -134,7 +134,7 @@ class InstallTests(unittest.TestCase):
         with mock.patch.object(sideload, 'install_with_xcode', xcode):
             self.install(asked)
         self.assertIn('the Apple ID Xcode is signed in to (Someone (Personal Team))', asked[0])
-        self.assertEqual(signed, [('ABCDE12345', 'dev.orchard.dopamine.abcde12345', 'UDID-1')])
+        self.assertEqual(signed, [('ABCDE12345', 'org.orchardlinux.resize-apfs.abcde12345', 'UDID-1')])
         self.assertEqual(self.calls, [], 'xtool is not used')
 
     def test_no_xcode_account_means_xtool(self):

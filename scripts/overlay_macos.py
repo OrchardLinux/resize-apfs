@@ -48,10 +48,10 @@ def build(base, destination, writes):
             shutil.copy2(device / executable, libexec / executable)
             (libexec / executable).chmod(0o755)
         daemons = stage / 'Library/LaunchDaemons'
-        config = plistlib.loads((ROOT / 'Device/dev.omarchy.resize-apfs.plist').read_bytes())
+        config = plistlib.loads((ROOT / 'Device/org.orchardlinux.resize-apfs.helper.plist').read_bytes())
         if writes:
             config['ProgramArguments'].append('--allow-writes')
-        (daemons / 'dev.omarchy.resize-apfs.plist').write_bytes(plistlib.dumps(config))
+        (daemons / 'org.orchardlinux.resize-apfs.helper.plist').write_bytes(plistlib.dumps(config))
         original = plistlib.loads((daemons / 'palera1nd.plist').read_bytes())
         original['Program'] = '/cores/binpack/usr/libexec/resize-overlay-entry'
         original['ProgramArguments'] = [original['Program']]
