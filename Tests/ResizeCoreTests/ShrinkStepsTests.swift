@@ -76,7 +76,8 @@ final class ShrinkStepsTests: XCTestCase {
         XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: other, budget: ShrinkSteps.startingBudget), 56 * GiB)
         // Fixed steps shrink with the budget after slow calls.
         XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: 512 * MiB), 60 * GiB)
-        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.minimumBudget), 62 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.firstBudget), 62 * GiB)
+        XCTAssertEqual(ShrinkSteps.nextTarget(from: 64 * GiB, to: 16 * GiB, map: nil, budget: ShrinkSteps.minimumBudget), 63 * GiB + 512 * MiB)
     }
 
     func testInconsistentMapsAreRefused() {
@@ -92,13 +93,33 @@ final class ShrinkStepsTests: XCTestCase {
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 40); XCTAssertEqual(budget, 512 * MiB)
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 94) }
         XCTAssertEqual(budget, ShrinkSteps.minimumBudget)
-        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 512 * MiB, "at most doubling")
+        budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 4); XCTAssertEqual(budget, 128 * MiB, "at most doubling")
         // A call just under the fast limit grows only toward the target time: 29 s (the XR's) -> x40/29.
         XCTAssertEqual(ShrinkSteps.adjustedBudget(512 * MiB, afterCallSeconds: 29), Int64(Double(512 * MiB) * 40 / 29) / MiB * MiB)
         XCTAssertEqual(ShrinkSteps.adjustedBudget(GiB, afterCallSeconds: 45), GiB, "between the limits the budget stays")
         for _ in 0..<10 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 1) }
         XCTAssertEqual(budget, ShrinkSteps.maximumBudget, "fast storage is no longer held at the starting budget")
         budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: 65); XCTAssertEqual(budget, 4 * GiB, "still halves after a slow call")
+    }
+
+    func testTheFirstStepIsSmallAndFastStorageOutgrowsItWithinThreeSteps() {
+        XCTAssertEqual(ShrinkSteps.firstBudget, 256 * MiB)
+        var budget = ShrinkSteps.firstBudget
+        // The iPhone XR: about 30 s per GiB, so 256 MiB takes about 8 s.
+        for _ in 0..<2 { budget = ShrinkSteps.adjustedBudget(budget, afterCallSeconds: Double(budget) / Double(GiB) * 30) }
+        XCTAssertEqual(budget, GiB)
+    }
+
+    func testARestartDuringAStepStartsTheNextShrinkAtAQuarterOfIt() {
+        func step(_ budget: Int64?, from: Int64 = 64 * GiB, to: Int64 = 63 * GiB) -> APFSStepProgress {
+            APFSStepProgress(number: 1, plannedCount: 4, fromBytes: from, targetBytes: to, dataBudgetBytes: budget, previousCallSeconds: nil)
+        }
+        XCTAssertEqual(ShrinkSteps.budgetAfterRestart(during: step(GiB)), 256 * MiB)
+        XCTAssertEqual(ShrinkSteps.budgetAfterRestart(during: step(256 * MiB)), 64 * MiB)
+        XCTAssertEqual(ShrinkSteps.budgetAfterRestart(during: step(64 * MiB)), ShrinkSteps.minimumBudget, "never below the floor")
+        XCTAssertEqual(ShrinkSteps.budgetAfterRestart(during: step(8 * GiB)), ShrinkSteps.firstBudget, "never above the first budget")
+        // A fixed-size step (no space map): 2 GiB of container stands for a 256 MiB budget.
+        XCTAssertEqual(ShrinkSteps.budgetAfterRestart(during: step(nil, from: 64 * GiB, to: 62 * GiB)), 64 * MiB)
     }
 
     func testAnUnalignedTargetGetsNoExtraStepForItsRemainder() throws {
@@ -291,6 +312,9 @@ final class ShrinkStepsTests: XCTestCase {
         let message = snapshot.operation?.message ?? ""
         XCTAssertTrue(message.contains("step 2 of 5"), message)
         XCTAssertTrue(message.contains("APFS now measures \(Capacity.gb(fixture.containerBytes))"), message)
+        // The next shrink starts at a quarter of the interrupted step's 1 GiB.
+        let learned = try JSONDecoder().decode([String: Int64].self, from: Data(contentsOf: state.appendingPathComponent("restart-budget.json")))
+        XCTAssertEqual(learned["firstBudgetBytes"], 256 * MiB)
     }
 
     // MARK: Mock service

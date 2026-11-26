@@ -184,8 +184,16 @@ public struct APFSStepProgress: Codable, Equatable, Sendable {
 /// the new end, so the pause grows with the data moved and the storage speed,
 /// not with the size removed. Smaller calls keep each pause short.
 public enum ShrinkSteps {
+    /// The budget fixed-size steps (no usable space map) are scaled against:
+    /// `fallbackStepBytes` of container at this budget.
     public static let startingBudget: Int64 = 1 << 30
-    public static let minimumBudget: Int64 = 256 << 20
+    /// What the first step of a shrink may move. Slow storage must survive the
+    /// first call, before any timing is known: the iPhone XR moved 1 GiB in about
+    /// 30 s, so storage three times slower ran 1 GiB past the watchdog's 90 s on
+    /// every try. 256 MiB stays near 25 s there; fast storage grows past it
+    /// within two or three steps.
+    public static let firstBudget: Int64 = 256 << 20
+    public static let minimumBudget: Int64 = 64 << 20
     /// The most a step may move once calls have proven fast. Every step's fixed
     /// cost (the rest, inspections, APFS's minimum) is the same whatever it
     /// moves, so on fast storage fewer, larger steps finish sooner.
@@ -244,6 +252,15 @@ public enum ShrinkSteps {
             position = next; steps += 1
         }
         return steps
+    }
+
+    /// The first budget after the device restarted during `step`: the watchdog
+    /// most likely reset it inside that step's call, which never reported its
+    /// time, so a quarter of that step's budget, never above `firstBudget`.
+    public static func budgetAfterRestart(during step: APFSStepProgress) -> Int64 {
+        let budget = step.dataBudgetBytes
+            ?? (step.fromBytes - step.targetBytes) / (fallbackStepBytes / startingBudget)
+        return min(firstBudget, max(minimumBudget, alignDown(budget / 4, to: alignment)))
     }
 
     /// Halves the budget after a slow call. After a fast one it grows toward
