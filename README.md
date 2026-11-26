@@ -42,8 +42,9 @@ the Apple logo: unplug the cable briefly. Close browsers that use WebUSB first.
 4. Sign in with your Apple ID when asked; it goes only to Apple. On a Mac signed in
    to Xcode, that account is used.
 5. Trust your Apple ID on the device: **Settings > General > VPN & Device Management**.
-6. Open Resize APFS. It gets storage access by itself: the screen goes dark once.
-   Unlock the device when it comes back; Resize APFS opens again and shows your storage.
+6. Open Resize APFS and tap **Continue**. The screen restarts; unlock the device when
+   it comes back, and Resize APFS opens again and shows your storage. If it does not
+   open again by itself, open it within 20 seconds.
 
 The device needs an internet connection for step 6. After a restart of the device,
 just open Resize APFS again. A free Apple ID signs the app for 7 days; run step 3

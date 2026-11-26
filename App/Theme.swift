@@ -116,7 +116,7 @@ extension UIColor {
 /// Line icons on a 24-point grid, drawn as template images.
 enum Icon {
     case chevronLeft, chevronRight, arrowRight, check, checkCircle, circle, circleDot, square, squareCheck
-    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, circleStop, history
+    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, circleStop, history, key, timer
 
     func image(_ size: CGFloat = 20, lineWidth: CGFloat = 2) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
@@ -153,6 +153,12 @@ enum Icon {
                 line([CGPoint(x: 12, y: 9), CGPoint(x: 12, y: 13)]); circle(CGPoint(x: 12, y: 16.6), 1.1).fill()
             case .alertCircle:
                 stroke(circle(CGPoint(x: 12, y: 12), 10)); line([CGPoint(x: 12, y: 7.5), CGPoint(x: 12, y: 12.5)]); circle(CGPoint(x: 12, y: 16.2), 1.1).fill()
+            case .key:
+                stroke(circle(CGPoint(x: 7.5, y: 16.5), 5.5))
+                line([CGPoint(x: 11.4, y: 12.6), CGPoint(x: 21, y: 3)]); line([CGPoint(x: 17, y: 7), CGPoint(x: 20, y: 10)])
+            case .timer:
+                stroke(circle(CGPoint(x: 12, y: 14), 8))
+                line([CGPoint(x: 10, y: 2), CGPoint(x: 14, y: 2)]); line([CGPoint(x: 12, y: 14), CGPoint(x: 15, y: 11)])
             case .plug:
                 line([CGPoint(x: 9, y: 2), CGPoint(x: 9, y: 7)]); line([CGPoint(x: 15, y: 2), CGPoint(x: 15, y: 7)])
                 stroke(UIBezierPath(roundedRect: CGRect(x: 6, y: 7, width: 12, height: 7), cornerRadius: 3))

@@ -110,7 +110,8 @@ struct Pages {
     func build() -> [UIView] {
         var views: [UIView] = []
         switch model.accessPhase {
-        case .getting: return accessGetting()
+        case .start: return storageAccess(working: false)
+        case .getting: return storageAccess(working: true)
         case .failed: return accessFailed()
         case .checking: return connection()
         case .ready: break
@@ -218,19 +219,32 @@ struct Pages {
 
     // MARK: Storage access (the app installed without DFU)
 
-    private func accessGetting() -> [UIView] {
-        let heading = label("Getting storage access", Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
-        heading.accessibilityIdentifier = "gettingStorageAccess"
+    /// One page from the start to the storage: first with Continue, then, while access is
+    /// being obtained and whenever the app is opened again in between, with the spinner.
+    private func storageAccess(working: Bool) -> [UIView] {
+        let heading = label("Storage access", Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
+        heading.accessibilityIdentifier = working ? "gettingStorageAccess" : "storageAccessStart"
         heading.accessibilityTraits = .header
-        return [statusHeading(StatusBadge(.working, size: m.badge), heading,
-                              ["The screen goes dark once and your open apps close. Unlock the device when it comes back."])]
+        let top = statusHeading(StatusBadge(working ? .working : .access, size: m.badge), heading,
+                                ["Resize APFS needs access to your device’s storage. This takes about a minute."])
+        let rows: [UIView] = ["The screen restarts and open apps close", "Unlock the device when it is back",
+                              "Resize APFS opens again by itself"].map {
+            stack(.horizontal, 9, [Icon.arrowRight.view(16, color: Theme.blue), label($0, Theme.font(m.row), Theme.ink)], align: .center)
+        }
+        return [top, stack(.vertical, 12, rows + [caption("Your storage is not changed. Needs an internet connection.")]), reopenNotice()]
+    }
+
+    /// Some devices restart their screen once before access; nothing can open the app again
+    /// then, and Dopamine holds what that restart was for only about 20 seconds.
+    private func reopenNotice() -> UIView {
+        WarningBox(m, icon: .timer, title: "If Resize APFS doesn’t open again by itself, reopen it within 20 seconds.", paragraphs: [])
     }
 
     private func accessFailed() -> [UIView] {
         let heading = label("Couldn’t get storage access", Theme.font(m.title, .semibold, .largeTitle), Theme.ink)
         heading.accessibilityIdentifier = "storageAccessFailed"
         heading.accessibilityTraits = .header
-        return [statusHeading(StatusBadge(.failure, size: m.badge), heading, ["Your storage was not changed."])]
+        return [statusHeading(StatusBadge(.failure, size: m.badge), heading, ["Your storage was not changed."]), reopenNotice()]
     }
 
     // MARK: Storage overview
@@ -545,6 +559,7 @@ struct Pages {
     private func actions() -> [UIView] {
         switch model.accessPhase {
         case .getting, .checking: return []
+        case .start: return [ActionButton(title: "Continue", identifier: "continueAccess") { [model] in model.continueAccess() }]
         case .failed: return [ActionButton(title: "Try again", identifier: "tryAgain") { [model] in model.retryAccess() }]
         case .ready: break
         }
