@@ -346,7 +346,8 @@ final class WarningBox: UIView {
         layer.borderWidth = 1
         layer.borderColor = (tone == .warning ? Theme.warningBorder : Theme.destructiveBorder).cgColor
         let heading = stack(.horizontal, 8, [icon.view(15, color: ink),
-                                             label(title, Theme.font(metrics.heading, .semibold, .headline), ink)], align: .center)
+                                             label(title, Theme.font(metrics.heading, .semibold, .headline), ink)],
+                            align: paragraphs.isEmpty ? .top : .center)
         let body = stack(.vertical, 8, [heading] + paragraphs.map { label($0, Theme.font(metrics.row), ink) })
         if !rows.isEmpty {
             let list = stack(.vertical, 6, rows)
@@ -375,10 +376,11 @@ final class WarningBox: UIView {
 /// The square badge above a status page: a tinted box with a border holding a
 /// spinner (radial bars, iOS's own) or a symbol.
 final class StatusBadge: UIView {
-    enum Kind { case working, success, stopped, failure }
+    /// `access`: the start of getting storage access (the app installed without DFU).
+    enum Kind { case working, success, stopped, failure, access }
     init(_ kind: Kind, size: CGFloat = 64) {
         super.init(frame: .zero)
-        let (fill, border): (UIColor, UIColor) = kind == .working || kind == .stopped ? (Theme.blueTint, Theme.blueBorder)
+        let (fill, border): (UIColor, UIColor) = kind == .working || kind == .stopped || kind == .access ? (Theme.blueTint, Theme.blueBorder)
             : kind == .success ? (Theme.greenTint, Theme.greenBorder) : (Theme.destructiveTint, Theme.destructiveBorder)
         backgroundColor = fill
         layer.borderWidth = 1; layer.borderColor = border.cgColor
@@ -393,6 +395,7 @@ final class StatusBadge: UIView {
         case .success: inner = Icon.check.view(size * 0.47, color: Theme.green, lineWidth: 2.4)
         case .stopped: inner = Icon.circleStop.view(size * 0.5, color: Theme.blue)
         case .failure: inner = Icon.warning.view(size * 0.47, color: Theme.destructive, lineWidth: 2.2)
+        case .access: inner = Icon.key.view(size * 0.47, color: Theme.blue)
         }
         addSubview(inner)
         NSLayoutConstraint.activate([inner.centerXAnchor.constraint(equalTo: centerXAnchor), inner.centerYAnchor.constraint(equalTo: centerYAnchor)])

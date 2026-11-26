@@ -37,6 +37,10 @@ static DOEnvironmentManager *environment(void) {
     if (!jailbreaker || !environment()) return @"This copy of the app lacks its access component.";
     NSError *error = nil;
     BOOL removed = NO, logs = YES;
+    // The setup script of the files Dopamine unpacks on a device's first run (Procursus's
+    // prep_bootstrap.sh) asks the user to set a terminal password unless this is set, as
+    // Dopamine's own later runs set it. Nothing here uses a terminal or a password.
+    setenv("NO_PASSWORD_PROMPT", "1", 1);
     @try {
         // Without this, the run draws Dopamine's logo for the screen restart.
         [[NSClassFromString(@"DOPreferenceManager") sharedManager] setPreferenceValue:@NO forKey:@"bootlogoEnabled"];

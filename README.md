@@ -20,7 +20,7 @@ open Terminal in the `ResizeAPFS-v…` folder. Then pick the method for your dev
 | --- | --- | --- |
 | **DFU** (palera1n) | A8 to A11 | 15 or later |
 | **DFU** (checkra1n) | A7 to A11 | 12 to 14 |
-| **Without DFU** | A8 to A13 | 15.0 to 18.7.1, 26.0 to 26.0.1 |
+| **Dopamine**, no DFU | A8 to A13 | 15.0 to 18.7.1, 26.0 to 26.0.1 |
 | | A14 and later | 15.0 to 17.3.1 |
 
 ### Via DFU (checkra1n / palera1n)
@@ -33,17 +33,18 @@ open Terminal in the `ResizeAPFS-v…` folder. Then pick the method for your dev
 If the boot fails, enter DFU and run it again; it often takes a few tries. Stuck at
 the Apple logo: unplug the cable briefly. Close browsers that use WebUSB first.
 
-### Without DFU
+### Via Dopamine
 
 1. Turn on Developer Mode: **Settings > Privacy & Security > Developer Mode**. The
    device restarts; confirm **Turn On**.
 2. Connect the device, unlock it and trust the computer.
-3. Run `./resize-apfs boot --no-dfu` and press Enter at the Developer Mode question.
+3. Run `./resize-apfs boot --dopamine` and press Enter at the Developer Mode question.
 4. Sign in with your Apple ID when asked; it goes only to Apple. On a Mac signed in
    to Xcode, that account is used.
 5. Trust your Apple ID on the device: **Settings > General > VPN & Device Management**.
-6. Open Resize APFS. It gets storage access by itself: the screen goes dark once.
-   Unlock the device when it comes back; Resize APFS opens again and shows your storage.
+6. Open Resize APFS and tap **Continue**. The screen restarts; unlock the device when
+   it comes back, and Resize APFS opens again and shows your storage. If it does not
+   open again by itself, open it within 20 seconds.
 
 The device needs an internet connection for step 6. After a restart of the device,
 just open Resize APFS again. A free Apple ID signs the app for 7 days; run step 3
@@ -62,7 +63,8 @@ device until it is done.
 
 | Device | iOS/iPadOS | Method |
 | --- | --- | --- |
-| iPhone XR | 18.3.2 | Without DFU |
+| iPhone XR | 18.3.2 | Dopamine |
+| iPad (6th generation) | 17.7.11 | Dopamine |
 | iPhone X (d221) | 16.7 | DFU (palera1n), Linux host |
 | iPad (6th generation) | 17.7.11 | DFU (palera1n) |
 | iPad mini 4 (J96) | 15.8.3 | DFU (palera1n), Linux host |

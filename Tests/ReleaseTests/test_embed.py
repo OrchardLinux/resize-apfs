@@ -79,6 +79,11 @@ class InterfaceTests(unittest.TestCase):
             selectors.append(''.join(part + ':' for part in parts) if parts else declaration.strip())
         self.assertEqual(sorted(embed.INTERFACE), sorted(set(classes + selectors)))
 
+    def test_the_first_run_asks_for_no_password(self):
+        # Set before the run, so the bootstrap's setup script inherits it.
+        bridge = (ROOT / 'Access/AccessBridge.m').read_text()
+        self.assertLess(bridge.index('setenv("NO_PASSWORD_PROMPT", "1", 1)'), bridge.index('runWithError:&error'))
+
     def test_the_bridge_names_no_other_dopamine_class(self):
         bridge = (ROOT / 'Access/AccessBridge.m').read_text()
         named = set(re.findall(r'\bDO[A-Z]\w+', bridge))

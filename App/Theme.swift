@@ -116,7 +116,9 @@ extension UIColor {
 /// Line icons on a 24-point grid, drawn as template images.
 enum Icon {
     case chevronLeft, chevronRight, arrowRight, check, checkCircle, circle, circleDot, square, squareCheck
-    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, circleStop, history
+    case warning, alertCircle, plug, drive, layers, flask, info, lock, xCircle, circleStop, history, key, timer
+    /// The app icon's drive with its two arrows, filled: the whole icon without its background.
+    case appDrive
 
     func image(_ size: CGFloat = 20, lineWidth: CGFloat = 2) -> UIImage {
         let format = UIGraphicsImageRendererFormat.default()
@@ -153,6 +155,37 @@ enum Icon {
                 line([CGPoint(x: 12, y: 9), CGPoint(x: 12, y: 13)]); circle(CGPoint(x: 12, y: 16.6), 1.1).fill()
             case .alertCircle:
                 stroke(circle(CGPoint(x: 12, y: 12), 10)); line([CGPoint(x: 12, y: 7.5), CGPoint(x: 12, y: 12.5)]); circle(CGPoint(x: 12, y: 16.2), 1.1).fill()
+            case .appDrive:
+                // The app icon's shapes (App/Assets.xcassets, 1024 points) on this 24-point grid.
+                let unit: CGFloat = 24.0 / 1024
+                func at(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * unit, y: y * unit) }
+                func polygon(_ points: [(CGFloat, CGFloat)]) -> UIBezierPath {
+                    let shape = UIBezierPath()
+                    shape.move(to: at(points[0].0, points[0].1)); points.dropFirst().forEach { shape.addLine(to: at($0.0, $0.1)) }
+                    shape.close()
+                    return shape
+                }
+                let body = UIBezierPath()
+                body.move(to: at(128, 608)); body.addLine(to: at(168, 352))
+                body.addQuadCurve(to: at(256, 278), controlPoint: at(180, 278)); body.addLine(to: at(768, 278))
+                body.addQuadCurve(to: at(856, 352), controlPoint: at(844, 278)); body.addLine(to: at(896, 608))
+                body.close(); body.fill()
+                let base = UIBezierPath()
+                base.move(to: at(128, 628)); base.addLine(to: at(896, 628)); base.addLine(to: at(896, 673))
+                base.addQuadCurve(to: at(824, 745), controlPoint: at(896, 745)); base.addLine(to: at(200, 745))
+                base.addQuadCurve(to: at(128, 673), controlPoint: at(128, 745))
+                base.close(); base.fill()
+                cg.setBlendMode(.clear)
+                polygon([(293, 456), (373, 397), (373, 438), (480, 438), (480, 474), (373, 474), (373, 516)]).fill()
+                polygon([(731, 456), (651, 397), (651, 438), (544, 438), (544, 474), (651, 474), (651, 516)]).fill()
+                circle(at(804, 680), 25 * unit).fill()
+                cg.setBlendMode(.normal)
+            case .key:
+                stroke(circle(CGPoint(x: 7.5, y: 16.5), 5.5))
+                line([CGPoint(x: 11.4, y: 12.6), CGPoint(x: 21, y: 3)]); line([CGPoint(x: 17, y: 7), CGPoint(x: 20, y: 10)])
+            case .timer:
+                stroke(circle(CGPoint(x: 12, y: 14), 8))
+                line([CGPoint(x: 10, y: 2), CGPoint(x: 14, y: 2)]); line([CGPoint(x: 12, y: 14), CGPoint(x: 15, y: 11)])
             case .plug:
                 line([CGPoint(x: 9, y: 2), CGPoint(x: 9, y: 7)]); line([CGPoint(x: 15, y: 2), CGPoint(x: 15, y: 7)])
                 stroke(UIBezierPath(roundedRect: CGRect(x: 6, y: 7, width: 12, height: 7), cornerRadius: 3))

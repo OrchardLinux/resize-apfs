@@ -212,6 +212,8 @@ do {
     // Nothing the helper serves works before the first unlock: its journal (if an
     // earlier helper wrote it with class C), its token and the app all need it.
     if isDevice && fixture == nil { FirstUnlock.wait() }
+    // The app without DFU asks for no terminal password, so the default one must not stay.
+    if embeddedApp != nil { Thread.detachNewThread { TerminalPassword.replaceDefault() } }
     let source = DeviceSource(path: fixture ?? "/dev/disk0", fixtureSectorSize: fixture == nil ? nil : Int64(argument("--sector-size") ?? "512"),
                               writesEnabled: CommandLine.arguments.contains("--allow-writes"))
     let server = try HelperServer(source: source,

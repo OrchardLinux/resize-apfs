@@ -187,14 +187,27 @@ the steps, what we depend on and what to do when something changed.
 `App/StorageAccess.swift` runs when the app opens:
 
 1. Access is there (`isJailbroken`): go on to 3.
-2. Otherwise the app shows **Getting storage access** and runs Dopamine's `DOJailbreaker`
-   (`runWithError:…`, then `finalize`, which restarts the screen). No package manager is
-   installed and no password is set: those are choices of Dopamine's interface, which never
-   runs. Dopamine's logo for the screen restart is switched off (`bootlogoEnabled`). An attempt
-   that fails, or that the device did not survive, is remembered: the next launch shows
-   **Couldn't get storage access** with **Try again** instead of trying again by itself.
-   Older devices whose home screen has to restart once first (Dopamine's "contiguous mapping
-   workaround") do that once; the user opens the app again.
+2. Otherwise the app shows **Storage access**: what will happen, and **Continue**. Nothing is
+   triggered before that. Then the same page stays up with a spinner while Dopamine's
+   `DOJailbreaker` runs (`runWithError:…`, then `finalize`, which restarts the screen). No
+   package manager is installed: that is a choice of Dopamine's interface, which never runs. No
+   terminal password is asked for (`NO_PASSWORD_PROMPT`, for the setup script of the files
+   Dopamine unpacks on a first run), and those files hold no SSH server. They do give the
+   user `mobile`, who may `sudo`, the well-known password `alpine`: the helper replaces that
+   default by a random one when it starts (`TerminalPassword`), and leaves a password the user
+   chose alone. Dopamine's logo for
+   the screen restart is switched off (`bootlogoEnabled`).
+
+   Some devices (an iPad (6th generation) on iPadOS 17.7 for one) first need their screen
+   restarted once (Dopamine's "contiguous mapping workaround"). Nothing can open the app again
+   after that restart, and Dopamine holds what the restart was for only about 20 seconds: the
+   page's notice says to reopen the app within 20 seconds. The app leaves a note before that
+   restart (`restarted` and the time); opened again within two minutes, it goes on by itself
+   with the spinner page.
+
+   An attempt that fails, that the device did not survive, or whose first screen restart was
+   not used in time is remembered: the next launch shows **Couldn't get storage access**, the
+   same notice and **Try again** instead of trying again by itself.
 3. As root and outside the sandbox (`runAsRoot:` and `runUnsandboxed:`), the app puts the helper
    at `/var/jb/usr/libexec/resize-helper` and its launch daemon at
    `/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist`, unless both are there

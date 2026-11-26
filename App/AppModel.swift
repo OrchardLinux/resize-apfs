@@ -152,7 +152,7 @@ final class AppModel {
     func connect() {
         if let access, !accessBegun {
             accessBegun = true
-            access.begin(retry: false) { [weak self] in self?.accessChanged($0) }
+            access.begin(.launch) { [weak self] in self?.accessChanged($0) }
         }
         guard accessPhase == .ready, !polling else { return }
         polling = true
@@ -168,8 +168,9 @@ final class AppModel {
         notify()
         if phase == .ready { connect() }
     }
-    /// After a failed attempt: the user asked for another.
-    func retryAccess() { access?.begin(retry: true) { [weak self] in self?.accessChanged($0) } }
+    /// Continue on the start page, and Try again after a failed attempt.
+    func continueAccess() { access?.begin(.confirmed) { [weak self] in self?.accessChanged($0) } }
+    func retryAccess() { access?.begin(.retry) { [weak self] in self?.accessChanged($0) } }
 
     func disconnectUI() { polling = false; pollGeneration += 1; service.disconnect() }
 

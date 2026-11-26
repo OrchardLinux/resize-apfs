@@ -15,8 +15,14 @@ import ResizeCore
 /// opens, installs the storage helper as a launch daemon and reaches it as root. With DFU
 /// the boot provides all of this and the app has no StorageAccess.
 final class StorageAccess: @unchecked Sendable {
-    /// `.checking`: access is there, the helper is being put in place.
-    enum Phase { case ready, checking, getting, failed }
+    /// `.start`: nothing has happened yet, the user is told what will. `.getting`: access is
+    /// being obtained. `.checking`: access is there, the helper is being put in place.
+    enum Phase { case ready, checking, start, getting, failed }
+    /// Why `begin` runs: the app opened, or the user pressed Continue or Try again.
+    enum Entry { case launch, confirmed, retry }
+    /// How long the note about the first screen restart counts. Opened later than this, the
+    /// app starts from its first page again instead of restarting the screen unasked.
+    static let resumeWindow: TimeInterval = 120
 
     static let folder = "/private/var/ResizeAPFS"
     /// Inside the jailbreak root: iOS 15 and later lets launchd start programs only from there,
@@ -79,13 +85,18 @@ final class StorageAccess: @unchecked Sendable {
     }
     private let elevation = NSLock()
 
-    /// Obtains access unless it is there. `update` runs on the main queue: at once with
-    /// `.getting` or `.failed`, later with `.failed` or `.ready`. A successful attempt ends
-    /// with the screen restarting, and with it the app; the helper opens the app again.
-    /// After an attempt that did not finish, nothing is tried until `retry`.
-    func begin(retry: Bool, update: @escaping (Phase) -> Void) {
-        let last = (try? String(contentsOf: attemptFile, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        log("begin: ready \(bridge.isReady()), last attempt \(last ?? "none"), retry \(retry)")
+    /// Shows where things stand and, once the user has agreed, obtains access. `update` runs
+    /// on the main queue, at once and again when the phase changes. Nothing is triggered
+    /// before Continue (`.start`), except to go on after the first screen restart that some
+    /// devices need: the app left a note before it. A successful attempt ends with the screen
+    /// restarting, and with it the app; the helper opens the app again. After an attempt that
+    /// did not finish, nothing is tried until Try again.
+    func begin(_ entry: Entry, update: @escaping (Phase) -> Void) {
+        let note = ((try? String(contentsOf: attemptFile, encoding: .utf8)) ?? "").split(separator: " ").map(String.init)
+        var last = note.first
+        let restartedAt = note.count > 1 ? TimeInterval(note[1]) : nil
+        if last == "restarted", Date().timeIntervalSince1970 - (restartedAt ?? 0) > Self.resumeWindow { last = nil }
+        log("begin: ready \(bridge.isReady()), last attempt \(last ?? "none"), entry \(entry)")
         if bridge.isReady() {
             update(.checking)
             queue.async { [self] in
@@ -105,14 +116,19 @@ final class StorageAccess: @unchecked Sendable {
             }
             return
         }
-        if !retry, last == "started" || last == "failed" { update(.failed); return }
+        let resuming = entry == .launch && last == "restarted"
+        if entry == .launch, !resuming {
+            return update(last == "started" || last == "failed" ? .failed : .start)
+        }
         record("started")
         update(.getting)
         queue.async { [self] in
             if bridge.needsScreenRestart() {
-                // Once: a device that still needs it after the restart cannot be helped by another.
-                guard last != "restarted" else { return fail("The screen restart did not help.", update) }
-                record("restarted")
+                // Still needed after the restart: the app was opened again too late, or the
+                // restart did not help. The page says so; Try again restarts the screen again.
+                guard !resuming else { return fail("The screen restart was not used in time.", update) }
+                record("restarted \(Int(Date().timeIntervalSince1970))")
+                log("this device needs its screen restarted first")
                 bridge.restartScreen()
                 return
             }
