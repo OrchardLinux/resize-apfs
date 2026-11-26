@@ -32,6 +32,10 @@ public struct Operation: Codable, Equatable, Sendable {
     public var stopRequested: Bool?
     /// The operation ended because of that request, not because of an error.
     public var stoppedByUser: Bool?
+    /// The user has seen how the operation ended and closed that page (Done). Absent: not
+    /// yet. Kept with the operation, where every copy of the app finds it: the copy a boot
+    /// through DFU brings, the installed one, and one installed again later.
+    public var acknowledged: Bool?
     public var currentStep: OperationStep? { plan.steps.indices.contains(stepIndex) ? plan.steps[stepIndex] : nil }
     public var isActive: Bool { status == .running }
 
@@ -106,6 +110,11 @@ public struct StopRequest: Codable, Sendable {
     public init(operationID: UUID) { self.operationID = operationID }
 }
 
+public struct AcknowledgeRequest: Codable, Sendable {
+    public var operationID: UUID
+    public init(operationID: UUID) { self.operationID = operationID }
+}
+
 public struct ScenarioRequest: Codable, Sendable {
     public var scenario: MockScenario
     public var timeScale: Double
@@ -125,6 +134,8 @@ public protocol ResizeService: Sendable {
     func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>)
     func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
+    /// Records that the user closed a finished operation's page.
+    func acknowledge(_ request: AcknowledgeRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
     /// Drops an open connection; the next request opens a new one.
     func disconnect()
     func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>)
@@ -168,6 +179,7 @@ public struct HTTPResizeService: ResizeService {
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { send("plan", encoding: request, completion: completion) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations", encoding: request, completion: completion) }
     public func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations/stop", encoding: request, completion: completion) }
+    public func acknowledge(_ request: AcknowledgeRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("operations/acknowledge", encoding: request, completion: completion) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("admin/scenario", encoding: request, completion: completion) }
     public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshots/remove", encoding: request, completion: completion) }
     public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { send("snapshots/take", encoding: request, completion: completion) }
@@ -207,6 +219,7 @@ public struct UnavailableDeviceService: ResizeService {
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { completion(.failure(error)) }
     public func start(_ request: StartRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func stop(_ request: StopRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
+    public func acknowledge(_ request: AcknowledgeRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func configureMock(_ request: ScenarioRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func removeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }
     public func takeSnapshot(_ request: SnapshotRequest, completion: @escaping ServiceCompletion<ServiceSnapshot>) { completion(.failure(error)) }

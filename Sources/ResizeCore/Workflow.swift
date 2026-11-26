@@ -17,7 +17,7 @@ public struct WorkflowMachine: Sendable {
                 state = [.verifyAPFS, .verifyPartition, .verifyLayout].contains(op.currentStep) ? .verifying : .running
             case .unknown: state = .stopped
             case .completed, .stopped:
-                if op.id != acknowledgedOperationID { state = op.status == .completed ? .completed : .stopped }
+                if op.id != acknowledgedOperationID && op.acknowledged != true { state = op.status == .completed ? .completed : .stopped }
                 else if ![.editor, .review].contains(state) { state = .overview }
             }
         } else if ![.editor, .review, .submitting].contains(state) { state = .overview }

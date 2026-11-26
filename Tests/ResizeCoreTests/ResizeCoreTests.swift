@@ -248,4 +248,26 @@ final class EngineTests: XCTestCase {
         try machine.edit(); try machine.review(); try machine.submit()
         XCTAssertEqual(machine.state, .submitting)
     }
+    /// Done is kept with the operation: another copy of the app, which never heard of it,
+    /// does not open on the finished operation's page again.
+    func testDoneClosesTheFinishedOperationForEveryCopyOfTheApp() async throws {
+        let engine = try MockEngine()
+        let running = try await begin(engine)
+        // An operation that still runs is not closed.
+        let early = try await engine.acknowledge(AcknowledgeRequest(operationID: XCTUnwrap(running.operation).id))
+        XCTAssertNil(early.operation?.acknowledged)
+        let finished = try await finish(engine)
+        var other = WorkflowMachine()
+        other.receive(finished)
+        XCTAssertEqual(other.state, .completed)
+        // Not this operation: nothing changes.
+        let wrong = try await engine.acknowledge(AcknowledgeRequest(operationID: UUID()))
+        XCTAssertNil(wrong.operation?.acknowledged)
+        let closed = try await engine.acknowledge(AcknowledgeRequest(operationID: XCTUnwrap(finished.operation).id))
+        XCTAssertEqual(closed.operation?.acknowledged, true)
+        var fresh = WorkflowMachine()
+        fresh.receive(closed)
+        XCTAssertEqual(fresh.state, .overview)
+        try fresh.edit()
+    }
 }

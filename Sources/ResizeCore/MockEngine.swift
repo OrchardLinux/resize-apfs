@@ -80,6 +80,15 @@ public actor MockEngine {
         return try snapshot(at: now, allowOutage: false)
     }
 
+    /// As on the device: kept with the finished operation.
+    public func acknowledge(_ request: AcknowledgeRequest, at now: Date = Date()) throws -> ServiceSnapshot {
+        if let op = record.operation, op.id == request.operationID, op.status == .completed || op.status == .stopped {
+            record.operation?.acknowledged = true
+            try save()
+        }
+        return try snapshot(at: now, allowOutage: false)
+    }
+
     /// As on the device: refused while an operation is active, for a stale view,
     /// or for a snapshot iOS needs; afterwards the minimum is what the APFS
     /// query reports without it (here the iPod touch's 19.5 GB).

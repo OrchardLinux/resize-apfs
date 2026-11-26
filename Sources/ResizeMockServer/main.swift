@@ -100,6 +100,8 @@ final class HTTPServer: @unchecked Sendable {
                 data = try encoder.encode(try await engine.start(decoder.decode(StartRequest.self, from: body)))
             case ("POST", "/operations/stop"):
                 data = try encoder.encode(try await engine.stop(decoder.decode(StopRequest.self, from: body)))
+            case ("POST", "/operations/acknowledge"):
+                data = try encoder.encode(try await engine.acknowledge(decoder.decode(AcknowledgeRequest.self, from: body)))
             case ("POST", "/snapshots/remove"):
                 data = try encoder.encode(try await engine.removeSnapshot(decoder.decode(SnapshotRequest.self, from: body)))
             case ("POST", "/snapshots/take"):
