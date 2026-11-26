@@ -192,7 +192,10 @@ the steps, what we depend on and what to do when something changed.
    `DOJailbreaker` runs (`runWithError:…`, then `finalize`, which restarts the screen). No
    package manager is installed: that is a choice of Dopamine's interface, which never runs. No
    terminal password is asked for (`NO_PASSWORD_PROMPT`, for the setup script of the files
-   Dopamine unpacks on a first run), and those files hold no SSH server. Dopamine's logo for
+   Dopamine unpacks on a first run), and those files hold no SSH server. They do give the
+   user `mobile`, who may `sudo`, the well-known password `alpine`: the helper replaces that
+   default by a random one when it starts (`TerminalPassword`), and leaves a password the user
+   chose alone. Dopamine's logo for
    the screen restart is switched off (`bootlogoEnabled`).
 
    Some devices (an iPad (6th generation) on iPadOS 17.7 for one) first need their screen

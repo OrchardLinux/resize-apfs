@@ -48,6 +48,7 @@ source is given for each.
 | `bootlogoEnabled = NO` keeps its logo off the screen restart, and nothing is drawn | `DOEnvironmentManager updateBootLogo` |
 | On a device's first run, the unpacked files' setup script asks for no terminal password when `NO_PASSWORD_PROMPT` is set, and the app's environment reaches that script | `prep_bootstrap.sh` in the app's `bootstrap_*.tar.zst`; `DOBootstrapper finalizeBootstrap`; `BaseBin/dopamine/src/main.m` sets the same |
 | The files it unpacks hold no SSH server | `tar --zstd -tf bootstrap_*.tar.zst`, no `sshd` |
+| Those files give the user `mobile` the password `alpine` with one fixed hash, which the helper replaces by a random password (`Sources/ResizeDevice/TerminalPassword.swift`, `defaults`) | `var/jb/etc/master.passwd` in `bootstrap_*.tar.zst`: the `mobile` line's second field must be in `defaults`, else add it |
 | After `runWithError:` succeeded, `runAsRoot:` and `runUnsandboxed:` work until `finalize` | `DOJailbreaker runWithError:`, `DOEnvironmentManager runAsRoot:` |
 | Daemons in `/var/jb/Library/LaunchDaemons` start with every screen restart | `BaseBin/launchdhook/src/daemon_hook.m` |
 | After the restart, the app is recognised by its bundle identifier and path | `BaseBin/libjailbreak/src/util.m`, `is_dopamine_app` |
