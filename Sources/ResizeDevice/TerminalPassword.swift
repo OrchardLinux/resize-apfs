@@ -43,7 +43,8 @@ public enum TerminalPassword {
         posix_spawn_file_actions_init(&actions)
         posix_spawn_file_actions_adddup2(&actions, input[0], 0)
         posix_spawn_file_actions_addclose(&actions, input[1])
-        let argv = [tool, "usermod", "501", "-h", "0"].map { strdup($0) } + [nil]
+        let command: [String] = [tool, "usermod", "501", "-h", "0"]
+        let argv: [UnsafeMutablePointer<CChar>?] = command.map { strdup($0) } + [nil]
         defer { argv.forEach { free($0) } }
         var pid: pid_t = 0
         let spawned = posix_spawn(&pid, tool, &actions, nil, argv, environ)
