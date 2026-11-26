@@ -1,12 +1,13 @@
 # Resize APFS
 
-Shrink your iPhone or iPad's iOS storage to make room for Linux, and grow it back.
+Shrink your iPhone or iPad's storage to make room for Linux, and grow it back.
 
 **Back up your device first.**
 
 <p>
-  <img src="docs/screenshots/storage-overview.png" alt="Storage overview showing APFS, Linux and unallocated space on iPad" width="45%">
-  <img src="docs/screenshots/adjust-size.png" alt="Adjust size screen with target APFS size and Linux partition options" width="45%">
+  <img src="docs/screenshots/01-storage-overview.png" alt="Storage overview" width="30%">
+  <img src="docs/screenshots/02-adjust-size.png" alt="Adjust size" width="30%">
+  <img src="docs/screenshots/03-shrinking-apfs.png" alt="Shrinking APFS in steps" width="30%">
 </p>
 
 ## Use
