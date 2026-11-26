@@ -158,6 +158,8 @@ def merge(app, payload):
             info[key] = ours[key]
         else:
             info.pop(key, None)
+    # An app's own settings (the Orchard installer's `OrchardSystem`).
+    info.update({key: value for key, value in ours.items() if key.startswith('Orchard')})
     # The icon comes from the loose files: by name it would be the one in Dopamine's image catalog.
     for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
         info.get(key, {}).get('CFBundlePrimaryIcon', {}).pop('CFBundleIconName', None)

@@ -108,6 +108,7 @@ class MergeTests(unittest.TestCase):
             info = plistlib.loads(archive.read(app + 'Info.plist'))
             self.assertEqual(info['CFBundleDisplayName'], 'Resize APFS')
             self.assertEqual(info['UIAppFonts'], ['Fonts/Mono.ttf'])
+            self.assertEqual(info['OrchardSystem'], 'Omarchy A', "an app's own settings come along")
             self.assertNotIn(embed.SCENES, info, "Dopamine's own interface must not start")
             self.assertNotIn('NSPhotoLibraryUsageDescription', info)
             self.assertEqual(info['CFBundleExecutable'], 'Dopamine')
