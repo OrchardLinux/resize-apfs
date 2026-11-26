@@ -100,8 +100,9 @@ Other devices and iOS versions are untested.
    manager (Sileo or Zebra) and set a password. The home screen restarts; unlock
    the device.
 8. Enter that password in the terminal when asked. The launcher copies Resize APFS
-   to the device. Open it from the Home Screen, choose **Adjust size**, enter your
-   target, review and confirm, and wait for **Completed and verified**.
+   to the device and it opens by itself (if it doesn't, open it from the Home Screen).
+   Choose **Adjust size**, enter your target, review and confirm, and wait for
+   **Completed and verified**.
 9. When you are done, type `done` and press Enter in the terminal. The launcher
    removes the app once no resize is running.
 
