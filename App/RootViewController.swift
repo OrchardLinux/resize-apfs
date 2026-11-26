@@ -133,6 +133,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
 
     /// Operation pages share one identity so progress and reconnecting keep their scroll position.
     private var identity: String {
+        if model.accessPhase != .ready { return "access" }
         if model.showsProgress { return "operation" }
         return model.state.rawValue
     }
@@ -154,7 +155,7 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
         let m = metrics
         // The screen stays on while the progress page is up: a device that goes to
         // sleep holds up the resize (four long stalls in an iPhone XR's shrink).
-        UIApplication.shared.isIdleTimerDisabled = model.showsProgress
+        UIApplication.shared.isIdleTimerDisabled = model.showsProgress || model.accessPhase == .getting
         // The page as it looks now, to animate away from when the state changes.
         let leaving = identity != pageIdentity && !pageIdentity.isEmpty && view.window != nil
         let previous = pageIdentity
@@ -205,8 +206,8 @@ final class RootViewController: UIViewController, UIScrollViewDelegate {
     private func renderKeys() -> (page: String, footer: String) {
         let encoded = model.snapshotKey
         let editing = [model.targetText, model.freeText, model.targetBytes.map(String.init) ?? "-", "\(model.createLinux)", "\(model.eraseFollowing)", model.reviewedPlan?.id.uuidString ?? "-"]
-        let page = ([model.state.rawValue, model.error ?? "-", "\(model.busy)", "\(model.connectionOK)", model.connectionMessage ?? "-", encoded] + editing).joined(separator: "|")
-        let footer = [model.state.rawValue, model.error ?? "-", "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
+        let page = (["\(model.accessPhase)", model.state.rawValue, model.error ?? "-", "\(model.busy)", "\(model.connectionOK)", model.connectionMessage ?? "-", encoded] + editing).joined(separator: "|")
+        let footer = ["\(model.accessPhase)", model.state.rawValue, model.error ?? "-", "\(model.busy)", model.layout?.issue ?? "-", "\(model.unchanged)", "\(model.localPlan != nil)",
                       model.operation?.status.rawValue ?? "-", model.operation?.currentStep?.rawValue ?? "-",
                       "\(model.operation?.onLastShrinkStep == true)", "\(model.operation?.stopRequested == true)"].joined(separator: "|")
         return (page, footer)

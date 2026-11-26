@@ -43,8 +43,15 @@ final class AppModel {
     private var polling = false
     private var pollGeneration = 0
     private var editRevision: UUID?
+    /// Only in the app installed without DFU, which obtains storage access by itself.
+    let access: StorageAccess?
+    /// `.getting` and `.failed` have their own pages, before any storage is shown.
+    private(set) var accessPhase: StorageAccess.Phase
+    private var accessBegun = false
 
-    init() {
+    init(access: StorageAccess? = nil) {
+        self.access = access
+        accessPhase = access == nil ? .ready : .checking
         let acknowledged = UserDefaults.standard.string(forKey: "acknowledgedOperation").flatMap(UUID.init(uuidString:))
         machine = WorkflowMachine(acknowledgedOperationID: acknowledged)
         #if targetEnvironment(simulator)
@@ -54,7 +61,9 @@ final class AppModel {
         service = HTTPResizeService(baseURL: url ?? URL(string: "http://127.0.0.1:8472")!)
         #else
         isSimulator = false
-        service = LocalSocketResizeService()
+        service = access.map { access in
+            LocalSocketResizeService(directory: URL(fileURLWithPath: StorageAccess.ipc), elevate: { access.privileged($0) })
+        } ?? LocalSocketResizeService()
         #endif
     }
 
@@ -141,7 +150,11 @@ final class AppModel {
     // MARK: Connection
 
     func connect() {
-        guard !polling else { return }
+        if let access, !accessBegun {
+            accessBegun = true
+            access.begin(retry: false) { [weak self] in self?.accessChanged($0) }
+        }
+        guard accessPhase == .ready, !polling else { return }
         polling = true
         pollGeneration += 1
         poll(pollGeneration)
@@ -150,6 +163,14 @@ final class AppModel {
     /// that stays idle for a few seconds. The connection is dropped here, so the first
     /// request after coming back opens a new one instead of failing on the old one
     /// (which showed the reconnecting page for a moment and left the size editor).
+    private func accessChanged(_ phase: StorageAccess.Phase) {
+        accessPhase = phase
+        notify()
+        if phase == .ready { connect() }
+    }
+    /// After a failed attempt: the user asked for another.
+    func retryAccess() { access?.begin(retry: true) { [weak self] in self?.accessChanged($0) } }
+
     func disconnectUI() { polling = false; pollGeneration += 1; service.disconnect() }
 
     private func poll(_ generation: Int) {
@@ -180,6 +201,7 @@ final class AppModel {
                         self.reviewedPlan = nil
                         self.error = "Storage changed while editing. Review a fresh plan before applying changes."
                     }
+                    if !self.connectionOK { self.access?.note("helper connected, layout issue: \(fresh.layout.issue ?? "none")") }
                     self.snapshot = fresh; self.connectionOK = true; self.receivedAt = Date(); self.connectionMessage = nil
                     self.machine.receive(fresh)
                     // The state now shows what became of the request.
@@ -192,6 +214,7 @@ final class AppModel {
         }
     }
     private func connectionLost(_ error: Error) {
+        if connectionMessage != error.localizedDescription { access?.note("helper connection: \(error.localizedDescription)") }
         connectionOK = false; connectionMessage = error.localizedDescription
         machine.connectionLost()
         notify()

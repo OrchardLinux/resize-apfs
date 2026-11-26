@@ -60,28 +60,16 @@ PINS = {
         size=10_360_264, sha256='dac9968939ea6e6bfbdedeb41d7e2579c4711dc2c5083f91dced66ca397dc51d',
         package='executable', member=None, executable_sha256=None),
 }
-# Dopamine 3.0.13, the jailbreak app for the route without DFU. Installed on the device, not
-# run here, so one file serves every computer. It is ad-hoc signed: the user signs it for
-# sideloading (dopamine_route.py).
+# Dopamine 3.0.13, for the route without DFU: Resize APFS is put into it (embed.py) and the
+# result installed on the device, so one file serves every computer. It is ad-hoc signed: the
+# user signs the app for sideloading (sideload.py). Changing this pin: docs/updating-dopamine.md.
 DOPAMINE = dict(url=DOPAMINE_RELEASE + '/Dopamine.ipa', size=55_422_988,
                 sha256='3664edd737cc672af5d9036d2d1513fb1d50784f0c0cfd49cc6e651b8c665e14', package='file',
                 member=None, executable_sha256=None)
-# Procursus's bootstrap with OpenSSH, for each bootstrap version Dopamine 3.0.13 bundles: the
-# same files as Dopamine's own copy plus OpenSSH (55 files). sideload.py swaps it in before
-# signing, so a device's first jailbreak brings the SSH server the session uses.
-BOOTSTRAP_SSH = {
-    version: dict(url=f'https://apt.procurs.us/bootstraps/{version}/bootstrap-ssh-iphoneos-arm64.tar.zst',
-                  size=size, sha256=sha256, package='file', member=None, executable_sha256=None)
-    for version, size, sha256 in (
-        ('1800', 21_889_605, '6592e54a1b4ef66d6a515f5bd29cf89e8f45c8e328443554ee596329ffbaf441'),
-        ('1900', 21_873_446, '2c639b83423e4365a3a849e2bc7c56671cdcc8da534d424b6b1779a27c0c7c08'))
-}
 for _system in ('macos', 'linux'):
     for _arch in ('arm64', 'x86_64'):
         PINS[('dopamine', _system, _arch)] = DOPAMINE
-        for _version, _pin in BOOTSTRAP_SSH.items():
-            PINS[('bootstrap-ssh-' + _version, _system, _arch)] = _pin
-# xtool 2.0.0-beta.2 signs Dopamine with the user's Apple ID and installs it (sideload.py).
+# xtool 2.0.0-beta.2 signs the app with the user's Apple ID and installs it (sideload.py).
 # The beta, not 1.24.0: it has the anisette crash fix (#422) and the provisioning-profile
 # conflict fix (#430) that re-signing every 7 days runs into; its Apple login already
 # sends the anisette provider's user agent (as omarchy-apple-dev's fork tests).

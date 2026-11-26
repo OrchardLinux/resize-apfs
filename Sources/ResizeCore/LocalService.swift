@@ -73,7 +73,8 @@ private final class LocalSocketTransport: @unchecked Sendable {
     private let queue = DispatchQueue(label: "resize.ipc.client", qos: .userInitiated)
     private var fd: Int32 = -1
     private var token: String?
-    init(directory: URL) { self.directory = directory }
+    private let elevate: LocalSocketResizeService.Elevation?
+    init(directory: URL, elevate: LocalSocketResizeService.Elevation?) { self.directory = directory; self.elevate = elevate }
     deinit { if fd >= 0 { Darwin.close(fd) } }
 
     func exchange<T: Decodable>(_ method: String, body: Data?, completion: @escaping ServiceCompletion<T>) {
@@ -105,6 +106,13 @@ private final class LocalSocketTransport: @unchecked Sendable {
     }
     private func connectIfNeeded() throws {
         guard fd < 0 else { return }
+        guard let elevate else { return try open() }
+        var failure: Error?
+        elevate { do { try self.open() } catch { failure = error } }
+        if let failure { throw failure }
+        guard fd >= 0 else { throw ResizeError("The storage helper cannot be reached yet.") }
+    }
+    private func open() throws {
         if token == nil {
             guard let value = try? String(contentsOf: directory.appendingPathComponent("client.token"), encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines), value.count == 64 else {
@@ -132,9 +140,14 @@ private final class LocalSocketTransport: @unchecked Sendable {
 public struct LocalSocketResizeService: ResizeService {
     public let directory: URL
     private let transport: LocalSocketTransport
-    public init(directory: URL = URL(fileURLWithPath: "/var/run/resize-apfs")) {
+    /// Runs its argument where the helper's socket can be opened, and returns after it.
+    public typealias Elevation = @Sendable (() -> Void) -> Void
+    /// `elevate`: for an app that only reaches the helper's folder as root and outside its
+    /// sandbox (the app without DFU, App/StorageAccess.swift). Reading the credentials and
+    /// connecting happen inside it; the open connection is used outside.
+    public init(directory: URL = URL(fileURLWithPath: "/var/run/resize-apfs"), elevate: Elevation? = nil) {
         self.directory = directory
-        transport = LocalSocketTransport(directory: directory)
+        transport = LocalSocketTransport(directory: directory, elevate: elevate)
     }
     public func snapshot(completion: @escaping ServiceCompletion<ServiceSnapshot>) { transport.exchange("snapshot", body: nil, completion: completion) }
     public func plan(_ request: PlanRequest, completion: @escaping ServiceCompletion<ResizePlan>) { call("plan", encoding: request, completion: completion) }

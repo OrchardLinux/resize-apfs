@@ -14,11 +14,19 @@ final class HelperServer: @unchecked Sendable {
     let ipcDirectory: URL
     let expectedUIPath: String
     let sessionApp: Bool
+    /// The app without DFU: (bundle identifier, process name). It connects as root.
+    let embeddedApp: (identifier: String, process: String)?
     let clients = DispatchSemaphore(value: 8)
+    /// Set by the first request with valid credentials.
+    private let served = NSLock()
+    private var wasServed = false
+    private var hasServed: Bool { served.lock(); defer { served.unlock() }; return wasServed }
 
     /// `uiPath`: the checkra1n session's app executable (already validated by
     /// SessionTrust); nil serves only the palera1n overlay's app, as before.
-    init(source: DeviceSource, stateDirectory: URL, ipcDirectory: URL, executable: String, uiPath: String? = nil) throws {
+    init(source: DeviceSource, stateDirectory: URL, ipcDirectory: URL, executable: String, uiPath: String? = nil,
+         embeddedApp: (identifier: String, process: String)? = nil) throws {
+        self.embeddedApp = embeddedApp
         #if os(iOS)
         guard geteuid() == 0, !source.isFixture else { throw ResizeError("The device helper must run as root and cannot use fixture mode.") }
         mobileUID = getpwnam("mobile")?.pointee.pw_uid ?? 501
@@ -61,7 +69,13 @@ final class HelperServer: @unchecked Sendable {
     }
 
     func run() {
-        AppOpener(executable: expectedUIPath, registerWithUICache: !sessionApp).start()
+        if let embeddedApp {
+            let opener = AppOpener(identifier: embeddedApp.identifier, processName: embeddedApp.process)
+            opener.opened = { [self] in hasServed }
+            opener.start()
+        } else {
+            AppOpener(executable: expectedUIPath, registerWithUICache: !sessionApp).start()
+        }
         Thread { [engine] in
             while true {
                 engine.refresh()
@@ -80,8 +94,8 @@ final class HelperServer: @unchecked Sendable {
                     var uid: uid_t = 0
                     guard raf_peer_uid(fd, &uid) == 0, uid == mobileUID || uid == 0 else { throw ResizeError("Local caller identity is not permitted.") }
                     #if os(iOS)
-                    guard uid == 0 || raf_peer_is_executable(fd, expectedUIPath) == 1 else {
-                        throw ResizeError(sessionApp ? "Only this session's Resize APFS app may use this helper."
+                    guard uid == 0 || (embeddedApp == nil && raf_peer_is_executable(fd, expectedUIPath) == 1) else {
+                        throw ResizeError(embeddedApp != nil ? "Only the Resize APFS app may use this helper." : sessionApp ? "Only this session's Resize APFS app may use this helper."
                                                      : "Only the Resize APFS app from the read-only overlay may use this helper.")
                     }
                     #endif
@@ -91,6 +105,7 @@ final class HelperServer: @unchecked Sendable {
                     while true {
                     let request = try JSONDecoder().decode(LocalRPCRequest.self, from: LocalFrames.read(from: fd))
                     guard constantTimeEqual(request.token, token) else { throw ResizeError("Invalid local helper credentials.") }
+                    served.lock(); wasServed = true; served.unlock()
                     // The response may be delayed by initial inspection. The client
                     // times out without resubmitting mutations; state lives here.
                     // The engine releases its lock during disk reads, so a slow
@@ -182,6 +197,12 @@ do {
     if CommandLine.arguments.contains("--operation-active") {
         exit(DeviceEngine.operationActive(directory: stateDirectory) ? 0 : 1)
     }
+    // The app without DFU (App/StorageAccess.swift): --embedded IDENTIFIER PROCESS.
+    var embeddedApp: (identifier: String, process: String)?
+    if let index = CommandLine.arguments.firstIndex(of: "--embedded") {
+        guard index + 2 < CommandLine.arguments.count else { throw ResizeError("--embedded needs the app's identifier and process name.") }
+        embeddedApp = (CommandLine.arguments[index + 1], CommandLine.arguments[index + 2])
+    }
     let session = CommandLine.arguments.contains("--session")
     let uiPath = argument("--ui-path")
     guard session == (uiPath != nil) || !isDevice else {
@@ -197,7 +218,8 @@ do {
                                   stateDirectory: stateDirectory,
                                   ipcDirectory: URL(fileURLWithPath: argument("--ipc-dir") ?? "/var/run/resize-apfs"),
                                   executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.path,
-                                  uiPath: try uiPath.map(SessionTrust.validatedUIPath))
+                                  uiPath: try uiPath.map(SessionTrust.validatedUIPath),
+                                  embeddedApp: embeddedApp)
     print("Resize APFS helper: local IPC only; writes \(source.writesEnabled ? "enabled, subject to app authorization" : "disabled")")
     server.run()
 } catch {

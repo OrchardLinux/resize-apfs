@@ -11,23 +11,15 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import sideload  # noqa: E402
 import tools  # noqa: E402
+from access_fixtures import make_ipa, make_payload  # noqa: E402
 
 
 def done(stdout='', code=0):
     return subprocess.CompletedProcess([], code, stdout, '')
-
-
-def make_ipa(path, bootstraps=('1800', '1900')):
-    with zipfile.ZipFile(path, 'w') as archive:
-        executable = zipfile.ZipInfo('Payload/Dopamine.app/Dopamine')
-        executable.external_attr = 0o755 << 16
-        archive.writestr(executable, b'\xcf\xfa\xed\xfe binary')
-        archive.writestr('Payload/Dopamine.app/Info.plist', b'plist')
-        for version in bootstraps:
-            archive.writestr(f'Payload/Dopamine.app/bootstrap_{version}.tar.zst', b'plain ' + version.encode())
 
 
 class XtoolTests(unittest.TestCase):
@@ -58,30 +50,19 @@ class XtoolTests(unittest.TestCase):
             sideload.log_in('xtool', run=lambda *a, **k: done(code=1))
 
 
-class PreparedIpaTests(unittest.TestCase):
-    def test_bootstraps_are_swapped_and_modes_kept(self):
+class PayloadTests(unittest.TestCase):
+    def test_a_folder_without_the_app_says_how_to_get_it(self):
         with tempfile.TemporaryDirectory() as folder:
-            folder = pathlib.Path(folder)
-            make_ipa(folder / 'in.ipa')
-            replacements = {}
-            for v in ('1800', '1900'):
-                (folder / v).write_bytes(b'ssh ' + v.encode())
-                replacements[v] = folder / v
-            out = sideload.prepared_ipa(folder / 'in.ipa', folder / 'work', replacements)
-            with zipfile.ZipFile(out) as archive:
-                self.assertEqual(archive.read('Payload/Dopamine.app/bootstrap_1800.tar.zst'), b'ssh 1800')
-                self.assertEqual(archive.read('Payload/Dopamine.app/bootstrap_1900.tar.zst'), b'ssh 1900')
-                self.assertEqual(archive.getinfo('Payload/Dopamine.app/Dopamine').external_attr >> 16 & 0o777, 0o755)
+            with self.assertRaisesRegex(ValueError, 'out/device/access'):
+                sideload.payload_key(pathlib.Path(folder) / 'missing')
 
-    def test_an_unpinned_bootstrap_version_is_refused(self):
+    def test_any_changed_file_changes_the_key(self):
         with tempfile.TemporaryDirectory() as folder:
-            folder = pathlib.Path(folder)
-            make_ipa(folder / 'in.ipa', bootstraps=('2000',))
-            with self.assertRaisesRegex(ValueError, 'version 2000'):
-                sideload.prepared_ipa(folder / 'in.ipa', folder / 'work', {})
-
-    def test_both_bundled_versions_are_pinned(self):
-        self.assertEqual(sorted(tools.BOOTSTRAP_SSH), ['1800', '1900'])
+            payload = make_payload(pathlib.Path(folder) / 'payload')
+            before = sideload.payload_key(payload)
+            self.assertEqual(sideload.payload_key(payload), before)
+            (payload / 'Resources/resize-helper.payload').write_bytes(b'RESIZE-APFS-HELPER\nnewer')
+            self.assertNotEqual(sideload.payload_key(payload), before)
 
 
 class InstallTests(unittest.TestCase):
@@ -90,10 +71,7 @@ class InstallTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = pathlib.Path(self.temporary.name)
         make_ipa(self.root / 'Dopamine.ipa')
-        self.replacements = {}
-        for v in ('1800', '1900'):
-            (self.root / v).write_bytes(b'ssh ' + v.encode())
-            self.replacements[v] = self.root / v
+        self.payload = make_payload(self.root / 'payload')
         self.calls = []
         self.team = False  # xtool, unless a test gives Xcode's account
 
@@ -106,7 +84,7 @@ class InstallTests(unittest.TestCase):
     def install(self, asked):
         with mock.patch('sys.stdout', io.StringIO()), mock.patch.object(sideload, 'describe', lambda udid, run: 'XR'):
             sideload.install(self.root / 'Dopamine.ipa', 'UDID-1', ask=asked.append, run=self.run_tool,
-                             root=self.root, replacements=self.replacements, provide=lambda tool: 'xtool', team=self.team)
+                             root=self.root, payload=self.payload, provide=lambda tool: 'xtool', team=self.team)
 
     def test_one_confirmation_then_sign_in_and_install_on_that_device(self):
         asked = []
@@ -127,6 +105,15 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(asked, [])
         self.assertEqual(self.calls, [])
 
+    def test_a_newer_resize_apfs_is_signed_and_installed_again(self):
+        self.install([])
+        (self.payload / 'ResizeAccess.dylib').write_bytes(b'\xcf\xfa\xed\xfe newer')
+        asked = []
+        with mock.patch.object(sideload, 'installed', lambda *a: None):
+            self.install(asked)
+        self.assertEqual(len(asked), 1)
+        self.assertIn('Sign Resize APFS', asked[0])
+
     def test_an_app_removed_from_the_device_is_signed_again(self):
         self.install([])
         asked = []
@@ -141,7 +128,7 @@ class InstallTests(unittest.TestCase):
         def xcode(prepared, work, team, identifier, udid, run):
             signed.append((team, identifier, udid))
             with zipfile.ZipFile(prepared) as archive:
-                self.assertEqual(archive.read('Payload/Dopamine.app/bootstrap_1900.tar.zst'), b'ssh 1900')
+                self.assertEqual(archive.read('Payload/Dopamine.app/resize-helper.payload'), b'RESIZE-APFS-HELPER\nhelper')
             return when
         asked = []
         with mock.patch.object(sideload, 'install_with_xcode', xcode):

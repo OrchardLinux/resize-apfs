@@ -97,6 +97,8 @@ struct Metrics {
     var optionDetail: CGFloat { regular ? 12 : 11 }
     var description: CGFloat { regular ? 13 : 12 }
     var big: CGFloat { regular ? 22 : 19 }
+    /// The badge above a status page: one size for the spinner and the result symbols.
+    var badge: CGFloat { regular ? 68 : 64 }
     var barHeight: CGFloat { regular ? 64 : (narrow ? 52 : 56) }
     /// A bar without labels (review and result).
     var plainBarHeight: CGFloat { regular ? 44 : 32 }

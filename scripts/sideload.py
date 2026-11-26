@@ -1,20 +1,21 @@
-"""Sign the pinned Dopamine with the user's own Apple ID and install it, on Linux and macOS.
+"""Sign Resize APFS with the user's own Apple ID and install it, on Linux and macOS.
 
-On a Mac whose Xcode is signed in to an Apple ID, that account signs it (xcode_signing.py):
-nothing new to sign in to. Otherwise xtool (pinned in tools.py) does the Apple side: `xtool auth login` signs in once (two-factor
-included) and keeps the session; `xtool install` registers the device, makes the App ID and
-provisioning profile, signs the app and installs it over the cable. The App ID is
+The app is the pinned Dopamine with Resize APFS in it (embed.py). On a Mac whose Xcode is
+signed in to an Apple ID, that account signs it (xcode_signing.py): nothing new to sign in to.
+Otherwise xtool (pinned in tools.py) does the Apple side: `xtool auth login` signs in once
+(two-factor included) and keeps the session; `xtool install` registers the device, makes the
+App ID and provisioning profile, signs the app and installs it over the cable. The App ID is
 `XTL-<account>.<bundle identifier>`, the same on every signing, so re-signing every 7 days
-(free accounts) reuses it instead of using up the weekly allowance of new ones.
+(free accounts) reuses it instead of using up the weekly allowance of new ones. The bundle
+identifiers are the ones earlier releases signed the plain Dopamine with, so the app replaces
+that one in place.
 
 Apple's sign-in needs anisette data (device identity); xtool gets it from the SideStore
 project's Omnisette server, as every free sideloading tool does. The password and two-factor
 code go only to Apple.
 
-Before signing, Dopamine's bundled bootstraps are replaced by Procursus's with OpenSSH, which
-the session needs (Device/README.md). The signing record and its expiry are kept in Orchard's
-cache; while a signed copy of the same Dopamine for the same device has more than a day left,
-nothing is signed or installed again.
+The signing record and its expiry are kept in Orchard's cache; while a signed copy of the same
+app for the same device has more than a day left, nothing is signed or installed again.
 
 Releases never contain anything team-signed: signing happens on the user's computer, with the
 user's account, for the user's device.
@@ -24,12 +25,11 @@ import hashlib
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import tempfile
-import zipfile
 
+import embed
 import tools
 import xcode_signing
 from image_format import require
@@ -37,12 +37,15 @@ from image_format import require
 MARGIN = datetime.timedelta(days=1)
 # A free Apple ID's profiles last 7 days; a paid one's longer, so this never overstates.
 VALIDITY = datetime.timedelta(days=7)
-VERIFY = ('Before opening Dopamine the first time, trust your Apple ID on the device: Settings > General > '
+VERIFY = ('Before opening Resize APFS the first time, trust your Apple ID on the device: Settings > General > '
           'VPN & Device Management, open your Apple ID and confirm.')
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+# The Resize APFS side of the app (scripts/build-device.sh).
+PAYLOAD = ROOT / 'out/device/access'
 
 
 def available(host=tools.host):
-    """True when Dopamine can be signed here: Xcode on a Mac, or an xtool release for this computer."""
+    """True when the app can be signed here: Xcode on a Mac, or an xtool release for this computer."""
     try:
         return ('xtool', *host()) in tools.PINS
     except ValueError:
@@ -81,48 +84,14 @@ def log_in(xtool, run=subprocess.run):
     require(result.returncode == 0, 'Signing in to your Apple ID failed.')
 
 
-def bootstraps(provide=tools.provide):
-    """{version: path} of the pinned Procursus bootstraps with OpenSSH."""
-    return {version: provide('bootstrap-ssh-' + version) for version in tools.BOOTSTRAP_SSH}
-
-
-def swap_bootstraps(app, replacements):
-    """Replace Dopamine's bundled bootstraps (bootstrap_<version>.tar.zst, unpacked on a device's
-    first jailbreak) with the ones that also hold OpenSSH."""
-    bundled = sorted(pathlib.Path(app).glob('bootstrap_*.tar.zst'))
-    require(bundled, 'This Dopamine bundles no bootstrap.')
-    for path in bundled:
-        version = path.name[len('bootstrap_'):-len('.tar.zst')]
-        require(version in replacements, f'No bootstrap with OpenSSH is pinned for version {version}.')
-        shutil.copyfile(replacements[version], path)
-
-
-def prepared_ipa(ipa, work, replacements):
-    """A copy of `ipa` whose bootstraps hold OpenSSH, for xtool to sign."""
-    work = pathlib.Path(work)
-    unpacked = work / 'unpacked'
-    with zipfile.ZipFile(ipa) as archive:
-        for info in archive.infolist():
-            target = (unpacked / info.filename).resolve()
-            require(target.is_relative_to(unpacked.resolve()), 'Unsafe path in the Dopamine IPA.')
-        archive.extractall(unpacked)
-        modes = {info.filename: info.external_attr >> 16 for info in archive.infolist()}
-    apps = list((unpacked / 'Payload').glob('*.app'))
-    require(len(apps) == 1, 'The Dopamine IPA does not hold exactly one app.')
-    swap_bootstraps(apps[0], replacements)
-    output = work / 'Dopamine.ipa'
-    with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(unpacked.rglob('*')):
-            name = path.relative_to(unpacked).as_posix() + ('/' if path.is_dir() else '')
-            info = zipfile.ZipInfo.from_file(path, name)
-            # Keep the original modes: executables must stay executable after signing.
-            info.external_attr = (modes.get(name) or (0o755 if path.is_dir() else 0o644)) << 16
-            if path.is_dir():
-                archive.writestr(info, b'')
-            else:
-                info.compress_type = zipfile.ZIP_DEFLATED
-                archive.writestr(info, path.read_bytes())
-    return output
+def payload_key(payload):
+    """One hash over every file of the Resize APFS payload."""
+    payload = pathlib.Path(payload)
+    files = sorted(path for path in payload.rglob('*') if path.is_file())
+    require(files, 'This folder has no app for the route without DFU (out/device/access). '
+                   'Use the release ZIP, or build it with scripts/build-device.sh.')
+    return hashlib.sha256(''.join(f'{path.relative_to(payload).as_posix()} {tools.sha256_file(path)}\n'
+                                  for path in files).encode()).hexdigest()
 
 
 def installed(udid, identifier, run=subprocess.run):
@@ -167,7 +136,7 @@ def record_path(udid, root=None):
 
 
 def still_signed(key, udid, now=None, root=None, run=subprocess.run, identifier='com.opa334.Dopamine'):
-    """The expiry of the installed Dopamine when it is this one and has over a day left, else None.
+    """The expiry of the installed app when it is this one and has over a day left, else None.
     Where the device cannot be asked whether it is still installed, the record decides."""
     try:
         record = json.loads(record_path(udid, root).read_text())
@@ -181,26 +150,25 @@ def still_signed(key, udid, now=None, root=None, run=subprocess.run, identifier=
     return None if installed(udid, identifier, run) is False else expires
 
 
-def install(ipa, udid, ask=input, run=subprocess.run, root=None, replacements=None, provide=tools.provide,
+def install(ipa, udid, ask=input, run=subprocess.run, root=None, payload=None, provide=tools.provide,
             team=None):
-    """Sign `ipa` with the user's Apple ID and install it on `udid` after one confirmation,
-    unless a signed copy is still installed. `team`: Xcode's account (xcode_team), or None
-    for xtool."""
-    replacements = bootstraps(provide) if replacements is None else replacements
+    """Put Resize APFS into the Dopamine `ipa`, sign it with the user's Apple ID and install it
+    on `udid` after one confirmation, unless a signed copy is still installed. `team`: Xcode's
+    account (xcode_team), or None for xtool."""
+    payload = PAYLOAD if payload is None else payload
     team = xcode_team(ask, run) if team is None else (team or None)
     identifier = xcode_signing.bundle_id(team[0]) if team else 'com.opa334.Dopamine'
-    # The installed copy is kept only when it was made from the same IPA and bootstraps, the same way.
-    key = hashlib.sha256(' '.join([identifier, tools.sha256_file(ipa)] + [tools.sha256_file(replacements[v])
-                         for v in sorted(replacements)]).encode()).hexdigest()
+    # The installed copy is kept only when it was made from the same Dopamine and payload, the same way.
+    key = hashlib.sha256(' '.join([identifier, tools.sha256_file(ipa), payload_key(payload)]).encode()).hexdigest()
     expires = still_signed(key, udid, root=root, run=run, identifier=identifier)
     if expires:
-        print(f'Dopamine is installed and signed until {expires:%d %b %Y}.')
+        print(f'Resize APFS is installed and signed until {expires:%d %b %Y}.')
         return
     account = f"the Apple ID Xcode is signed in to ({team[1]})" if team else 'your Apple ID'
-    ask(f'Sign Dopamine with {account} and install it on {describe(udid, run)}. Press Enter to continue. ')
-    with tempfile.TemporaryDirectory(prefix='dopamine-sign-') as work:
+    ask(f'Sign Resize APFS with {account} and install it on {describe(udid, run)}. Press Enter to continue. ')
+    with tempfile.TemporaryDirectory(prefix='resize-apfs-sign-') as work:
         work = pathlib.Path(work)
-        prepared = prepared_ipa(ipa, work / 'prepared', replacements)
+        prepared = embed.prepared_ipa(ipa, work / 'prepared', payload)
         if team:
             when = install_with_xcode(prepared, work / 'xcode', team[0], identifier, udid, run)
         else:
@@ -208,7 +176,7 @@ def install(ipa, udid, ask=input, run=subprocess.run, root=None, replacements=No
     record = record_path(udid, root)
     record.parent.mkdir(parents=True, exist_ok=True)
     record.write_text(json.dumps({'expires': when.isoformat(), 'key': key}))
-    print(f'Dopamine is installed, signed until about {when:%d %b %Y}.')
+    print(f'Resize APFS is installed, signed until about {when:%d %b %Y}.')
     print(VERIFY, flush=True)
 
 
@@ -218,10 +186,10 @@ def install_with_xcode(prepared, work, team, identifier, udid, run=subprocess.ru
     profile, entitlements, sha1 = xcode_signing.provision(work / 'profile', team, udid, run)
     when = xcode_signing.expiry(profile, run)
     app = xcode_signing.resign(prepared, work / 'app', identifier, profile, entitlements, sha1, run)
-    print('Installing Dopamine...', flush=True)
+    print('Installing Resize APFS...', flush=True)
     result = run(['xcrun', 'devicectl', 'device', 'install', 'app', '--device', udid, str(app)],
                  capture_output=True, text=True, timeout=600)
-    require(result.returncode == 0, 'Installing Dopamine failed: ' + (result.stderr or result.stdout).strip()[-800:])
+    require(result.returncode == 0, 'Installing Resize APFS failed: ' + (result.stderr or result.stdout).strip()[-800:])
     return when
 
 
@@ -230,9 +198,9 @@ def install_with_xtool(prepared, udid, run=subprocess.run, provide=tools.provide
     xtool = provide('xtool')
     if not logged_in(xtool, run):
         log_in(xtool, run)
-    print('Signing and installing Dopamine...', flush=True)
+    print('Signing and installing Resize APFS...', flush=True)
     signed_at = datetime.datetime.now(datetime.timezone.utc)
     # In this terminal: xtool may ask to trust the device or to replace a certificate.
     result = run([str(xtool), 'install', '--usb', '--udid', udid, str(prepared)], env=environment())
-    require(result.returncode == 0, f'Signing or installing Dopamine failed (xtool exit status {result.returncode}).')
+    require(result.returncode == 0, f'Signing or installing Resize APFS failed (xtool exit status {result.returncode}).')
     return signed_at + VALIDITY

@@ -36,7 +36,34 @@ codesign --force --sign - --timestamp=none --generate-entitlement-der \
 codesign --verify --deep --strict out/device/ResizeAPFS.app
 ldid -SDevice/helper.entitlements.plist out/device/resize-helper
 ldid -SDevice/helper.entitlements.plist out/device/resize-overlay-entry
-if find out/device/ResizeAPFS.app -name '*.mobileprovision' | grep -q .; then
+# The app without DFU (scripts/embed.py puts this into the pinned Dopamine app on the user's
+# computer): the same interface as a library, the resources it needs, and the helper.
+access=out/device/access
+rm -rf "$access"
+mkdir -p "$access/Resources"
+xcrun --sdk iphoneos clang -target "$target" -isysroot "$sdk" -Os -fobjc-arc -fmodules \
+  -c Access/AccessBridge.m -o "$build/AccessBridge.o"
+# AppDelegate.swift is the other start of the app (its own executable); here Dopamine's runs.
+xcrun --sdk iphoneos swiftc -target "$target" -sdk "$sdk" -swift-version 5 -O \
+  -parse-as-library -emit-library -module-name ResizeAccess \
+  -F "$products" -framework ResizeCore $(ls App/*.swift | grep -v '^App/AppDelegate.swift$') "$build/AccessBridge.o" \
+  -Xlinker -install_name -Xlinker @executable_path/Frameworks/ResizeAccess.dylib \
+  -o "$access/ResizeAccess.dylib"
+xcrun --sdk iphoneos strip -x "$access/ResizeAccess.dylib"
+codesign --force --sign - --timestamp=none "$access/ResizeAccess.dylib"
+cp "$products/ResizeAPFS.app/Info.plist" "$access/Info.plist"
+for resource in "$products/ResizeAPFS.app"/*; do
+  case "$(basename "$resource")" in
+    # Assets.car holds only the icon, which also ships as loose files; Dopamine's stays in place.
+    ResizeAPFS|Info.plist|PkgInfo|_CodeSignature|Frameworks|embedded.mobileprovision|Assets.car) ;;
+    *) ditto "$resource" "$access/Resources/$(basename "$resource")" ;;
+  esac
+done
+# With something in front of it, the helper is not a program to whoever signs the app with an
+# Apple ID, so it keeps the signature and entitlements from above (App/StorageAccess.swift
+# takes the prefix off again).
+{ printf 'RESIZE-APFS-HELPER\n'; cat out/device/resize-helper; } > "$access/Resources/resize-helper.payload"
+if find out/device -name '*.mobileprovision' | grep -q .; then
   echo 'Unexpected provisioning profile in the release payload.' >&2; exit 1
 fi
 python3 - <<'PY'

@@ -1,4 +1,5 @@
-"""Signing Dopamine with the Apple ID a Mac's Xcode is already signed in to: no new sign-in.
+"""Signing the app (Dopamine with Resize APFS in it, embed.py) with the Apple ID a Mac's Xcode is
+already signed in to: no new sign-in.
 
 Xcode makes the provisioning profile while it builds a tiny stub app with automatic signing
 for the connected device; the stub's profile, entitlements and certificate then sign Dopamine
@@ -42,7 +43,7 @@ def choose_team(found, ask=input):
                    'then run this again.')
     if len(found) == 1:
         return found[0]
-    print('Xcode is signed in to several teams. Sign Dopamine with:')
+    print('Xcode is signed in to several teams. Sign Resize APFS with:')
     for number, (team, name, _) in enumerate(found, 1):
         print(f'  {number}) {name} ({team})')
     answer = ask('> ').strip()
@@ -177,8 +178,8 @@ def sign_order(app):
 
 
 def resign(ipa, work, identifier, profile, entitlements, sha1, run=subprocess.run):
-    """Dopamine.app from `ipa` (its bootstraps already swapped), under `identifier`, signed with
-    the profile and identity."""
+    """The app from `ipa` (embed.prepared_ipa), under `identifier`, signed with the profile and
+    identity."""
     work = pathlib.Path(work)
     with zipfile.ZipFile(ipa) as archive:
         for name in archive.namelist():
@@ -198,7 +199,7 @@ def resign(ipa, work, identifier, profile, entitlements, sha1, run=subprocess.ru
         result = run([*sign, str(path)], capture_output=True, text=True, timeout=300)
         require(result.returncode == 0, f'Signing {path.name} failed: {result.stderr.strip()}')
     result = run([*sign, '--entitlements', str(work / 'entitlements.plist'), str(app)], capture_output=True, text=True, timeout=300)
-    require(result.returncode == 0, f'Signing Dopamine failed: {result.stderr.strip()}')
+    require(result.returncode == 0, f'Signing Resize APFS failed: {result.stderr.strip()}')
     return app
 
 

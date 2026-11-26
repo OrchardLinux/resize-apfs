@@ -13,6 +13,10 @@ public final class AppOpener: @unchecked Sendable {
     let appPath: String
     let executableName: String
     let registerWithUICache: Bool
+    /// Set for an app known by its identifier instead of its path.
+    let identifier: String?
+    /// Set to stop opening: for an app that counts as open only once it has connected.
+    public var opened: (() -> Bool)?
 
     /// `executable`: the app's executable inside its bundle. `registerWithUICache`:
     /// the palera1n route, where nothing has registered the app yet; the iOS 12-14
@@ -21,12 +25,22 @@ public final class AppOpener: @unchecked Sendable {
         appPath = (executable as NSString).deletingLastPathComponent
         executableName = (executable as NSString).lastPathComponent
         self.registerWithUICache = registerWithUICache
+        identifier = nil
+    }
+
+    /// An installed app whose path changes with every install (the app without DFU):
+    /// its bundle identifier and the name of its process.
+    public init(identifier: String, processName: String) {
+        appPath = ""
+        executableName = processName
+        registerWithUICache = false
+        self.identifier = identifier
     }
 
     public func start(log: @escaping (String) -> Void = { print($0); fflush(stdout) }) {
         #if os(iOS)
         Thread.detachNewThread { [self] in
-            guard let identifier = Bundle(path: appPath)?.bundleIdentifier else {
+            guard let identifier = identifier ?? Bundle(path: appPath)?.bundleIdentifier else {
                 log("App opener: no bundle identifier in \(appPath)")
                 return
             }
@@ -36,7 +50,14 @@ public final class AppOpener: @unchecked Sendable {
             let deadline = Date().addingTimeInterval(600)
             while Date() < deadline {
                 Thread.sleep(forTimeInterval: 1)
-                if raf_process_running(executableName) == 1 {
+                // A device still on its lock screen starts the app's process without showing
+                // the app: where the app says when it is there, only that counts.
+                if let opened {
+                    if opened() {
+                        log("App opener: the app has connected")
+                        return
+                    }
+                } else if raf_process_running(executableName) == 1 {
                     log("App opener: the app is running")
                     return
                 }

@@ -105,14 +105,14 @@ class VersionChoiceTests(unittest.TestCase):
         with mock.patch('builtins.input', side_effect=AssertionError('asked')):
             self.assertEqual(launcher.route(14), 'checkra1n')
             self.assertEqual(launcher.route(17), 'palera1n')
-            self.assertEqual(launcher.route(None, dopamine=True), 'dopamine')
-            self.assertEqual(launcher.route(18, dopamine=True), 'dopamine')
+            self.assertEqual(launcher.route(None, no_dfu=True), 'dopamine')
+            self.assertEqual(launcher.route(18, no_dfu=True), 'dopamine')
 
     def test_older_than_12_and_other_answers_are_refused(self):
         with self.assertRaises(ValueError):
             launcher.route(11)
         with self.assertRaises(ValueError):
-            launcher.route(14, dopamine=True)
+            launcher.route(14, no_dfu=True)
         with mock.patch('builtins.input', return_value='4'), mock.patch('sys.stdout', io.StringIO()), self.assertRaises(ValueError):
             launcher.route(None)
 
