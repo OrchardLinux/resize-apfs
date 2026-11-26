@@ -91,7 +91,7 @@ source is given for each.
    - the same device after another restart: the same, faster.
 
    Package and install as a user would (`./scripts/package-release.sh preview`, then
-   `./resize-apfs boot --no-dfu` in the unpacked ZIP).
+   `./resize-apfs boot --dopamine` in the unpacked ZIP).
 
 6. **Read the app's log** whatever the outcome; it says which step was reached:
 
