@@ -19,13 +19,14 @@ from access_fixtures import make_ipa, make_payload  # noqa: E402
 
 class FakeSigner:
     def __init__(self, available):
-        self.is_available, self.calls = available, []
+        self.is_available, self.calls, self.payloads = available, [], []
 
     def available(self):
         return self.is_available
 
-    def install(self, ipa, udid, ask):
+    def install(self, ipa, udid, ask, payload=None):
         self.calls.append((ipa, udid))
+        self.payloads.append(payload)
 
 
 class RunTests(unittest.TestCase):
@@ -49,6 +50,7 @@ class RunTests(unittest.TestCase):
         self.assertEqual(len(asked), 1)
         self.assertIn('Developer Mode', asked[0])
         self.assertEqual(signer.calls, [(self.ipa, 'UDID-1')])
+        self.assertEqual(signer.payloads, [self.payload], "another app's payload must reach the signer")
         self.assertIn('Open Resize APFS on the device', said)
 
     def test_where_nothing_can_sign_the_prepared_app_is_left_for_the_user(self):

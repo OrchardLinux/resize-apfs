@@ -46,7 +46,7 @@ def run(ipa, ask=input, signer=sideload, devices=usbmux.devices, work=None, payl
     sideload.payload_key(payload)
     ask(DEVELOPER_MODE)
     if signer.available():
-        signer.install(ipa, device(devices), ask)
+        signer.install(ipa, device(devices), ask, payload=payload)
     else:
         work = pathlib.Path(work or ROOT / '.work/sideload')
         work.mkdir(parents=True, exist_ok=True)
