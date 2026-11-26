@@ -17,6 +17,10 @@ final class HelperServer: @unchecked Sendable {
     /// The app without DFU: (bundle identifier, process name). It connects as root.
     let embeddedApp: (identifier: String, process: String)?
     let clients = DispatchSemaphore(value: 8)
+    /// Set by the first request with valid credentials.
+    private let served = NSLock()
+    private var wasServed = false
+    private var hasServed: Bool { served.lock(); defer { served.unlock() }; return wasServed }
 
     /// `uiPath`: the checkra1n session's app executable (already validated by
     /// SessionTrust); nil serves only the palera1n overlay's app, as before.
@@ -66,7 +70,9 @@ final class HelperServer: @unchecked Sendable {
 
     func run() {
         if let embeddedApp {
-            AppOpener(identifier: embeddedApp.identifier, processName: embeddedApp.process).start()
+            let opener = AppOpener(identifier: embeddedApp.identifier, processName: embeddedApp.process)
+            opener.opened = { [self] in hasServed }
+            opener.start()
         } else {
             AppOpener(executable: expectedUIPath, registerWithUICache: !sessionApp).start()
         }
@@ -99,6 +105,7 @@ final class HelperServer: @unchecked Sendable {
                     while true {
                     let request = try JSONDecoder().decode(LocalRPCRequest.self, from: LocalFrames.read(from: fd))
                     guard constantTimeEqual(request.token, token) else { throw ResizeError("Invalid local helper credentials.") }
+                    served.lock(); wasServed = true; served.unlock()
                     // The response may be delayed by initial inspection. The client
                     // times out without resubmitting mutations; state lives here.
                     // The engine releases its lock during disk reads, so a slow
