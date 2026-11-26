@@ -79,6 +79,36 @@ Other devices and iOS versions are untested.
 5. Choose **Adjust size**, enter your target, then review and confirm the changes.
 6. Wait for **Completed and verified** before restarting the device.
 
+### Without DFU (Dopamine, iOS/iPadOS 15 or later)
+
+1. Back up your device. Connect it over USB, unlock it and trust this computer.
+2. Download the release ZIP from [GitHub Releases](https://github.com/OrchardLinux/resize-apfs/releases) and unzip it.
+3. Open Terminal in the extracted folder (`ResizeAPFS-v…`) and run:
+
+   ```sh
+   ./resize-apfs boot --dopamine
+   ```
+
+4. Turn on Developer Mode when asked: Settings > Privacy & Security > Developer Mode.
+   The device restarts; confirm **Turn On**, then press Enter in the terminal.
+5. The launcher signs Dopamine with your Apple ID and installs it. On a Mac signed in
+   to Xcode, that account is used; otherwise sign in when asked (Apple ID, password,
+   two-factor code). Your password and code go only to Apple.
+6. Before opening Dopamine the first time, trust your Apple ID on the device:
+   Settings > General > VPN & Device Management, open your Apple ID and confirm.
+7. Open Dopamine and tap **Jailbreak**. On the first jailbreak, choose a package
+   manager (Sileo or Zebra) and set a password. The home screen restarts; unlock
+   the device.
+8. Enter that password in the terminal when asked. The launcher copies Resize APFS
+   to the device. Open it from the Home Screen, choose **Adjust size**, enter your
+   target, review and confirm, and wait for **Completed and verified**.
+9. When you are done, type `done` and press Enter in the terminal. The launcher
+   removes the app once no resize is running.
+
+A free Apple ID signs Dopamine for 7 days; the launcher signs it again when that runs
+out. After every restart of the device, open Dopamine and tap **Jailbreak** again
+before the next session.
+
 Booting loads the utility; it does not automatically resize anything. On Linux,
 only starting palera1n or checkra1n may prompt for sudo; image preparation does not
 require root.
