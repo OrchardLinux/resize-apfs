@@ -170,9 +170,14 @@ it into Orchard's cache. Nothing of Dopamine is rebuilt, patched in its code or 
 
 `ResizeAccess.dylib` (`scripts/build-device.sh`, in `out/device/access`) is the app's own
 interface, the same sources as `ResizeAPFS.app` without `AppDelegate.swift`, plus
-`Access/AccessBridge.m`. All it uses of Dopamine is in `Access/DopamineInterface.h`: two classes,
-seven methods, looked up by name at run time. `embed.py` refuses a Dopamine release whose
-executable lacks one of those names, and a test keeps its list and the header the same.
+`Access/AccessBridge.m`. All it uses of Dopamine is in `Access/DopamineInterface.h`: three
+classes, eight methods and one setting, looked up by name at run time. `embed.py` refuses a
+Dopamine release whose executable lacks one of those names, and a test keeps its list and the
+header the same.
+
+Dopamine's own files all stay, its image catalog too (its code draws from it); the app icon
+comes from loose files. Dopamine's app delegate answers for scenes, so iOS gives the app a
+scene even without a scene configuration; the Resize APFS window joins that scene.
 
 **Moving to a newer Dopamine:** change the pin in `tools.py`, run the release tests (the
 interface check runs against the real file at the next launch), then try it on a device.
@@ -184,20 +189,37 @@ interface check runs against the real file at the next launch), then try it on a
 1. Access is there (`isJailbroken`): go on to 3.
 2. Otherwise the app shows **Getting storage access** and runs Dopamine's `DOJailbreaker`
    (`runWithError:…`, then `finalize`, which restarts the screen). No package manager is
-   installed and no password is set: those are choices of Dopamine's interface, which never runs.
-   An attempt that fails, or that the device did not survive, is remembered: the next launch
-   shows **Couldn't get storage access** with **Try again** instead of trying again by itself.
+   installed and no password is set: those are choices of Dopamine's interface, which never
+   runs. Dopamine's logo for the screen restart is switched off (`bootlogoEnabled`). An attempt
+   that fails, or that the device did not survive, is remembered: the next launch shows
+   **Couldn't get storage access** with **Try again** instead of trying again by itself.
    Older devices whose home screen has to restart once first (Dopamine's "contiguous mapping
    workaround") do that once; the user opens the app again.
 3. As root and outside the sandbox (`runAsRoot:` and `runUnsandboxed:`), the app puts the helper
-   at `/private/var/ResizeAPFS/resize-helper` and its launch daemon at
+   at `/var/jb/usr/libexec/resize-helper` and its launch daemon at
    `/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist`, unless both are there
-   unchanged. Dopamine loads that folder's daemons with every screen restart, so the helper
-   starts by itself; it opens the app once the device is unlocked. A helper that is resizing
-   is never replaced.
-4. The app reads the helper's token and connects to its socket inside the same kind of block,
-   then uses the open connection as usual. The helper runs with `--embedded IDENTIFIER PROCESS`:
-   it accepts only root callers and opens the app by its bundle identifier.
+   unchanged. The helper must be inside the jailbreak root: launchd may not start programs
+   from the data partition on iOS 15 and later. Right after obtaining access this happens
+   before the screen restart, which then starts the daemon (Dopamine loads that folder's
+   daemons with every screen restart).
+4. The helper keeps opening the app until the app has connected: a device on its lock screen
+   starts the app's process without showing it. Where access is there but no helper is serving
+   (access from before the helper was in place), the app restarts the screen once to start it.
+5. The app reads the helper's token and connects to its socket as root, then uses the open
+   connection as usual. The helper runs with `--ipc-dir /private/var/ResizeAPFS/run --embedded
+   IDENTIFIER PROCESS`: it accepts only root callers and opens the app by its bundle identifier.
+   Not `/var/run`: the helper starts early in the screen restart, before iOS has set that up.
+
+Rules the app keeps, each learned on an iPhone XR with iOS 18.3.2:
+
+- **Privileged blocks run one at a time** and only read and write files or open the socket.
+  Root is a state of the whole process; a second thread entering or leaving it ends it under
+  the first. The app starts no program.
+- **Nothing is kept in UserDefaults.** Obtaining access moves the process's home folder to
+  root's. The last attempt (`attempt`) and a step log (`access.log`) are files in the app's
+  `Library/Application Support/ResizeAPFS`, whose path is taken at launch. The log is the way
+  to see what happened on a device: `xcrun devicectl device copy from --domain-type
+  appDataContainer --domain-identifier IDENTIFIER --source "Library/Application Support/ResizeAPFS"`.
 
 The helper travels in the bundle with `RESIZE-APFS-HELPER\n` in front of it: signing the app
 with an Apple ID re-signs every program in it, which would cost the helper its entitlements.
