@@ -37,7 +37,13 @@ static DOEnvironmentManager *environment(void) {
     if (!jailbreaker || !environment()) return @"This copy of the app lacks its access component.";
     NSError *error = nil;
     BOOL removed = NO, logs = YES;
-    [jailbreaker runWithError:&error didRemoveJailbreak:&removed showLogs:&logs];
+    @try {
+        // Without this, the run draws Dopamine's logo for the screen restart.
+        [[NSClassFromString(@"DOPreferenceManager") sharedManager] setPreferenceValue:@NO forKey:@"bootlogoEnabled"];
+        [jailbreaker runWithError:&error didRemoveJailbreak:&removed showLogs:&logs];
+    } @catch (NSException *exception) {
+        return [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason];
+    }
     if (error) return error.localizedDescription ?: @"Unknown error.";
     if (removed) return @"Access was removed instead of obtained.";
     [self privileged:prepare];

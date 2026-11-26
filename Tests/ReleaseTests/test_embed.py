@@ -65,7 +65,7 @@ class LibraryTests(unittest.TestCase):
 
 class InterfaceTests(unittest.TestCase):
     def test_a_release_without_a_call_we_make_is_refused_by_name(self):
-        names = [name for name in embed.INTERFACE if name != 'runAsRoot:']
+        names = [name for name in embed.INTERFACE + (embed.SETTING,) if name != 'runAsRoot:']
         with self.assertRaisesRegex(ValueError, 'it has no runAsRoot:'):
             embed.check_interface(macho(names))
         embed.check_interface(macho())
@@ -77,12 +77,13 @@ class InterfaceTests(unittest.TestCase):
         for declaration in re.findall(r'^[-+] \([^)]*\)\s*([^;]+);', header, re.M):
             parts = re.findall(r'(\w+)\s*:', declaration)
             selectors.append(''.join(part + ':' for part in parts) if parts else declaration.strip())
-        self.assertEqual(sorted(embed.INTERFACE), sorted(classes + selectors))
+        self.assertEqual(sorted(embed.INTERFACE), sorted(set(classes + selectors)))
 
     def test_the_bridge_names_no_other_dopamine_class(self):
         bridge = (ROOT / 'Access/AccessBridge.m').read_text()
         named = set(re.findall(r'\bDO[A-Z]\w+', bridge))
-        self.assertEqual(named, {'DOJailbreaker', 'DOEnvironmentManager'})
+        self.assertEqual(named, {'DOJailbreaker', 'DOEnvironmentManager', 'DOPreferenceManager'})
+        self.assertIn(f'@"{embed.SETTING}"', bridge)
 
 
 class MergeTests(unittest.TestCase):
@@ -112,6 +113,9 @@ class MergeTests(unittest.TestCase):
             self.assertEqual(archive.read(app + 'resize-helper.payload'), b'RESIZE-APFS-HELPER\nhelper')
             self.assertEqual(archive.read(app + 'Fonts/Mono.ttf'), b'font')
             self.assertEqual(archive.read(app + 'basebin.tar'), b'basebin')
+            self.assertEqual(archive.read(app + 'Assets.car'), b'their images', "Dopamine's code draws from its images")
+            self.assertEqual(info['CFBundleIcons'], {'CFBundlePrimaryIcon': {'CFBundleIconFiles': ['AppIcon60x60']}},
+                             'by name, the icon would be Dopamine\'s')
 
     def test_dopamines_launch_screen_is_replaced_where_ios_looks_first(self):
         with self.prepared() as archive:

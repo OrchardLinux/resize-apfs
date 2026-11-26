@@ -170,6 +170,18 @@ final class StorageAccess: @unchecked Sendable {
         self.window = window
         self.model = model
         let center = NotificationCenter.default
+        // Dopamine's app delegate answers for scenes, so iOS gives the app one even without a
+        // scene configuration in Info.plist, and shows only windows that belong to it.
+        if #available(iOS 13, *) {
+            func attach(_ scene: UIScene?) {
+                guard let scene = scene as? UIWindowScene, window.windowScene == nil else { return }
+                window.windowScene = scene
+                window.frame = scene.coordinateSpace.bounds
+                window.makeKeyAndVisible()
+            }
+            attach(UIApplication.shared.connectedScenes.first { $0 is UIWindowScene })
+            center.addObserver(forName: UIScene.willConnectNotification, object: nil, queue: .main) { attach($0.object as? UIScene) }
+        }
         center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in model.connect() }
         center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in model.disconnectUI() }
         model.connect()

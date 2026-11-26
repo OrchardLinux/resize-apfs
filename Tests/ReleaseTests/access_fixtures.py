@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import embed  # noqa: E402
 
 
-def macho(names=embed.INTERFACE, room=256):
+def macho(names=embed.INTERFACE + (embed.SETTING,), room=256):
     """A 64-bit Mach-O with one section holding `names`, `room` unused bytes before it."""
     content = b'\0' + b''.join(name.encode() + b'\0' for name in names)
     commands = 72 + 80
@@ -33,6 +33,7 @@ def make_ipa(path, executable=None):
         archive.writestr('Payload/Dopamine.app/Info.plist', plistlib.dumps(info))
         archive.writestr('Payload/Dopamine.app/Base.lproj/LaunchScreen.storyboardc/Info.plist', b'theirs')
         archive.writestr('Payload/Dopamine.app/basebin.tar', b'basebin')
+        archive.writestr('Payload/Dopamine.app/Assets.car', b'their images')
     return path
 
 
@@ -46,5 +47,6 @@ def make_payload(folder):
     (folder / 'Resources/resize-helper.payload').write_bytes(b'RESIZE-APFS-HELPER\nhelper')
     (folder / 'Info.plist').write_bytes(plistlib.dumps({
         'CFBundleDisplayName': 'Resize APFS', 'CFBundleName': 'ResizeAPFS', 'UILaunchStoryboardName': 'LaunchScreen',
-        'UIAppFonts': ['Fonts/Mono.ttf'], 'CFBundleIdentifier': 'dev.omarchy.resize-apfs'}))
+        'UIAppFonts': ['Fonts/Mono.ttf'], 'CFBundleIdentifier': 'dev.omarchy.resize-apfs',
+        'CFBundleIcons': {'CFBundlePrimaryIcon': {'CFBundleIconFiles': ['AppIcon60x60'], 'CFBundleIconName': 'AppIcon'}}}))
     return folder

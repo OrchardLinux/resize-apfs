@@ -1,6 +1,6 @@
-// Everything Resize APFS uses from the Dopamine app it is loaded into: two classes, seven
-// methods, declared as Dopamine 3.0.13 declares them (Application/Dopamine/Jailbreak/
-// DOJailbreaker.h and DOEnvironmentManager.h). Nothing else of Dopamine is called.
+// Everything Resize APFS uses from the Dopamine app it is loaded into: three classes, eight
+// methods and one setting, declared as Dopamine 3.0.13 declares them (Application/Dopamine/
+// Jailbreak/DOJailbreaker.h, DOEnvironmentManager.h and DOPreferenceManager.h). Nothing else of Dopamine is called.
 //
 // The classes are looked up by name at run time, so this file needs no Dopamine source. When
 // the pinned Dopamine changes (scripts/tools.py), scripts/embed.py refuses a release whose
@@ -23,4 +23,10 @@
 // Run a block as root, and outside the app sandbox. Both end with the block.
 - (void)runAsRoot:(void (^)(void))rootBlock;
 - (void)runUnsandboxed:(void (^)(void))unsandboxBlock;
+@end
+
+@interface DOPreferenceManager : NSObject
++ (instancetype)sharedManager;
+// The one setting used: "bootlogoEnabled" = NO, so the screen restart shows no Dopamine logo.
+- (void)setPreferenceValue:(NSObject *)obj forKey:(NSString *)key;
 @end

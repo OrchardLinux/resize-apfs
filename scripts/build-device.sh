@@ -54,7 +54,8 @@ codesign --force --sign - --timestamp=none "$access/ResizeAccess.dylib"
 cp "$products/ResizeAPFS.app/Info.plist" "$access/Info.plist"
 for resource in "$products/ResizeAPFS.app"/*; do
   case "$(basename "$resource")" in
-    ResizeAPFS|Info.plist|PkgInfo|_CodeSignature|Frameworks|embedded.mobileprovision) ;;
+    # Assets.car holds only the icon, which also ships as loose files; Dopamine's stays in place.
+    ResizeAPFS|Info.plist|PkgInfo|_CodeSignature|Frameworks|embedded.mobileprovision|Assets.car) ;;
     *) ditto "$resource" "$access/Resources/$(basename "$resource")" ;;
   esac
 done

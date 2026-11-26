@@ -7,6 +7,7 @@ The official Dopamine release (tools.py pins it by size and SHA-256) stays as it
 - Info.plist loses Dopamine's scene configuration, so Dopamine's own interface never appears,
   and takes the name, icon, launch screen and fonts of Resize APFS;
 - the Resize APFS resources and the storage helper (`resize-helper.payload`) are added.
+  Dopamine's own files all stay, its image catalog too: its code draws from it.
 
 Nothing of Dopamine is rebuilt or removed. Everything here runs on the user's computer, on
 Linux and macOS, before the app is signed with the user's Apple ID (sideload.py).
@@ -24,7 +25,10 @@ LIBRARY = '@executable_path/Frameworks/ResizeAccess.dylib'
 # A Dopamine release without one of these names is refused instead of failing on the device.
 INTERFACE = ('DOJailbreaker', 'contiguousMappingWorkaroundNeeded', 'applyContiguousMappingWorkaround',
              'runWithError:didRemoveJailbreak:showLogs:', 'finalize',
-             'DOEnvironmentManager', 'sharedManager', 'isJailbroken', 'runAsRoot:', 'runUnsandboxed:')
+             'DOEnvironmentManager', 'sharedManager', 'isJailbroken', 'runAsRoot:', 'runUnsandboxed:',
+             'DOPreferenceManager', 'setPreferenceValue:forKey:')
+# Dopamine's own setting that keeps its logo off the screen restart (Access/AccessBridge.m sets it).
+SETTING = 'bootlogoEnabled'
 # Taken from the Resize APFS Info.plist; a key it lacks is removed.
 INFO_KEYS = ('CFBundleDisplayName', 'CFBundleName', 'CFBundleShortVersionString', 'CFBundleVersion',
              'CFBundleIcons', 'CFBundleIcons~ipad', 'CFBundleIconFiles', 'UILaunchStoryboardName', 'UIAppFonts',
@@ -41,7 +45,7 @@ HEADER = 32
 
 def check_interface(executable):
     """Refuse a Dopamine executable that lacks something Resize APFS calls."""
-    missing = [name for name in INTERFACE if name.encode() + b'\0' not in executable]
+    missing = [name for name in INTERFACE + (SETTING,) if name.encode() + b'\0' not in executable]
     require(not missing, 'This Dopamine release does not fit this Resize APFS: it has no ' + ', '.join(missing) + '.')
 
 
@@ -144,6 +148,9 @@ def merge(app, payload):
             info[key] = ours[key]
         else:
             info.pop(key, None)
+    # The icon comes from the loose files: by name it would be the one in Dopamine's image catalog.
+    for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
+        info.get(key, {}).get('CFBundlePrimaryIcon', {}).pop('CFBundleIconName', None)
     (app / 'Info.plist').write_bytes(plistlib.dumps(info))
 
 
