@@ -7,6 +7,8 @@ import NativeSystem
 /// (palera1n's daemon does the same, about a minute later), then open it until
 /// its process runs. The app is opened once per helper start.
 public final class AppOpener: @unchecked Sendable {
+    /// How long the opener keeps trying after iOS first took an attempt.
+    static let afterTaken: TimeInterval = 15
     /// palera1n's uicache, on the palera1n route only.
     static let uicache = "/cores/binpack/usr/bin/uicache"
 
@@ -47,7 +49,13 @@ public final class AppOpener: @unchecked Sendable {
             var lastRegister = Date.distantPast
             var lastOutcome = ""
             // Give up after ten minutes: the user can always open the app from the Home Screen.
-            let deadline = Date().addingTimeInterval(600)
+            var deadline = Date().addingTimeInterval(600)
+            // Once iOS has taken an attempt, the app is on the screen or about to be. A few more
+            // attempts cover a start that stayed invisible behind the lock screen; after that
+            // the app is the user's to close. An app that never connects (its helper started by
+            // another kind of boot, where the app gets no access) would otherwise be brought
+            // back to the front every second for ten minutes.
+            var taken = false
             while Date() < deadline {
                 Thread.sleep(forTimeInterval: 1)
                 // A device still on its lock screen starts the app's process without showing
@@ -71,6 +79,10 @@ public final class AppOpener: @unchecked Sendable {
                 }
                 let viaLaunchServices = open(identifier)
                 let viaSpringBoard = viaLaunchServices ? 0 : springBoardLaunch(identifier)
+                if !taken, viaLaunchServices || viaSpringBoard == 0 {
+                    taken = true
+                    deadline = min(deadline, Date().addingTimeInterval(Self.afterTaken))
+                }
                 // A locked device refuses every attempt (Berkay saw SpringBoard 3) until it is unlocked:
                 // log the outcome when it changes, not every second.
                 let outcome = "LaunchServices \(viaLaunchServices), SpringBoard \(viaSpringBoard)"
@@ -79,7 +91,7 @@ public final class AppOpener: @unchecked Sendable {
                     lastOutcome = outcome
                 }
             }
-            log("App opener: gave up; the app stays on the Home Screen")
+            log(taken ? "App opener: done; the app is the user's to close" : "App opener: gave up; the app stays on the Home Screen")
         }
         #endif
     }
