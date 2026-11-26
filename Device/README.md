@@ -189,8 +189,9 @@ the steps, what we depend on and what to do when something changed.
 1. Access is there (`isJailbroken`): go on to 3.
 2. Otherwise the app shows **Getting storage access** and runs Dopamine's `DOJailbreaker`
    (`runWithError:…`, then `finalize`, which restarts the screen). No package manager is
-   installed and no password is set: those are choices of Dopamine's interface, which never
-   runs. Dopamine's logo for the screen restart is switched off (`bootlogoEnabled`). An attempt
+   installed: that is a choice of Dopamine's interface, which never runs. No terminal password
+   is asked for (`NO_PASSWORD_PROMPT`, for the setup script of the files Dopamine unpacks on a
+   first run), and those files hold no SSH server. Dopamine's logo for the screen restart is switched off (`bootlogoEnabled`). An attempt
    that fails, or that the device did not survive, is remembered: the next launch shows
    **Couldn't get storage access** with **Try again** instead of trying again by itself.
    Older devices whose home screen has to restart once first (Dopamine's "contiguous mapping
