@@ -161,7 +161,8 @@ struct Pages {
         let size: CGFloat = m.regular ? 38 : (m.narrow ? 36 : 40)
         let tile = UIView()
         tile.backgroundColor = Theme.blue
-        let icon = Icon.drive.view(size * 0.55, color: Theme.onAccent)
+        // The app icon: its drive on the accent colour, the icon's own proportions.
+        let icon = Icon.appDrive.view(size, color: Theme.onAccent)
         tile.addSubview(icon)
         tile.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: size), tile.heightAnchor.constraint(equalToConstant: size),
