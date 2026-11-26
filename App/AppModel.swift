@@ -46,11 +46,12 @@ final class AppModel {
     /// Only in the app installed without DFU, which obtains storage access by itself.
     let access: StorageAccess?
     /// `.getting` and `.failed` have their own pages, before any storage is shown.
-    private(set) var accessPhase = StorageAccess.Phase.ready
+    private(set) var accessPhase: StorageAccess.Phase
     private var accessBegun = false
 
     init(access: StorageAccess? = nil) {
         self.access = access
+        accessPhase = access == nil ? .ready : .checking
         let acknowledged = UserDefaults.standard.string(forKey: "acknowledgedOperation").flatMap(UUID.init(uuidString:))
         machine = WorkflowMachine(acknowledgedOperationID: acknowledged)
         #if targetEnvironment(simulator)
@@ -210,6 +211,7 @@ final class AppModel {
         }
     }
     private func connectionLost(_ error: Error) {
+        if connectionMessage != error.localizedDescription { access?.note("helper connection: \(error.localizedDescription)") }
         connectionOK = false; connectionMessage = error.localizedDescription
         machine.connectionLost()
         notify()

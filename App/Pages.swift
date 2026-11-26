@@ -112,6 +112,7 @@ struct Pages {
         switch model.accessPhase {
         case .getting: return accessGetting()
         case .failed: return accessFailed()
+        case .checking: return connection()
         case .ready: break
         }
         switch model.state {
@@ -543,7 +544,7 @@ struct Pages {
 
     private func actions() -> [UIView] {
         switch model.accessPhase {
-        case .getting: return []
+        case .getting, .checking: return []
         case .failed: return [ActionButton(title: "Try again", identifier: "tryAgain") { [model] in model.retryAccess() }]
         case .ready: break
         }
