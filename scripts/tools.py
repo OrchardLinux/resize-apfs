@@ -62,8 +62,7 @@ PINS = {
 }
 # Dopamine 3.0.13, for the route without DFU: Resize APFS is put into it (embed.py) and the
 # result installed on the device, so one file serves every computer. It is ad-hoc signed: the
-# user signs the app for sideloading (sideload.py). Changing this pin: embed.py checks that the
-# new release still has what Access/DopamineInterface.h lists; then try it on a device.
+# user signs the app for sideloading (sideload.py). Changing this pin: docs/updating-dopamine.md.
 DOPAMINE = dict(url=DOPAMINE_RELEASE + '/Dopamine.ipa', size=55_422_988,
                 sha256='3664edd737cc672af5d9036d2d1513fb1d50784f0c0cfd49cc6e651b8c665e14', package='file',
                 member=None, executable_sha256=None)

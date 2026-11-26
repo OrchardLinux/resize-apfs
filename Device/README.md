@@ -179,8 +179,8 @@ Dopamine's own files all stay, its image catalog too (its code draws from it); t
 comes from loose files. Dopamine's app delegate answers for scenes, so iOS gives the app a
 scene even without a scene configuration; the Resize APFS window joins that scene.
 
-**Moving to a newer Dopamine:** change the pin in `tools.py`, run the release tests (the
-interface check runs against the real file at the next launch), then try it on a device.
+**Moving to a newer Dopamine:** [docs/updating-dopamine.md](../docs/updating-dopamine.md) has
+the steps, what we depend on and what to do when something changed.
 
 ### On the device
 
