@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
                'tools.py', 'usbmux.py', 'checkra1n_route.py', 'dopamine_route.py', 'embed.py', 'sideload.py', 'xcode_signing.py', 'boot_run.py']
     for script in scripts:
         shutil.copy2(ROOT / 'scripts' / script, package / 'scripts' / script)
-    for file in ['upstream.lock.json', 'dev.omarchy.resize-apfs.plist', 'README.md']:
+    for file in ['upstream.lock.json', 'org.orchardlinux.resize-apfs.helper.plist', 'README.md']:
         shutil.copy2(ROOT / 'Device' / file, package / 'Device' / file)
     shutil.copytree(device, package / 'out/device')
     for relative, expected in manifest['files'].items():

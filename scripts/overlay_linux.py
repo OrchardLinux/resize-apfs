@@ -105,10 +105,10 @@ def build(base, destination, writes):
         for name in ('resize-helper', 'resize-overlay-entry'):
             add(outer, '/usr/libexec/' + name, device / name)
             h(outer, 'chmod', '0755', '/usr/libexec/' + name)
-        config = plistlib.loads((ROOT / 'Device/dev.omarchy.resize-apfs.plist').read_bytes())
+        config = plistlib.loads((ROOT / 'Device/org.orchardlinux.resize-apfs.helper.plist').read_bytes())
         if writes:
             config['ProgramArguments'].append('--allow-writes')
-        put(outer, '/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist', config)
+        put(outer, '/Library/LaunchDaemons/org.orchardlinux.resize-apfs.helper.plist', config)
         daemon = plistlib.loads(original.read('/Library/LaunchDaemons/palera1nd.plist'))
         daemon['Program'] = '/cores/binpack/usr/libexec/resize-overlay-entry'
         daemon['ProgramArguments'] = [daemon['Program']]
@@ -152,10 +152,10 @@ def audit(image, manifest):
         entry = outer.entries[path]
         require(entry['uid'] == entry['gid'] == 0 and entry['mode'] & 0o111 != 0, 'Invalid helper ownership or mode.')
         require(hashlib.sha256(outer.read(path)).hexdigest() == manifest['deviceBuild']['files'][name]['sha256'], 'Helper readback mismatch.')
-    for path in ['/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist', '/Library/LaunchDaemons/palera1nd.plist']:
+    for path in ['/Library/LaunchDaemons/org.orchardlinux.resize-apfs.helper.plist', '/Library/LaunchDaemons/palera1nd.plist']:
         entry = outer.entries[path]
         require(entry['uid'] == entry['gid'] == 0 and entry['mode'] & 0o022 == 0, 'Invalid daemon ownership or mode.')
-    daemon = plistlib.loads(outer.read('/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist'))
+    daemon = plistlib.loads(outer.read('/Library/LaunchDaemons/org.orchardlinux.resize-apfs.helper.plist'))
     require(daemon['ProgramArguments'][0] == '/cores/binpack/usr/libexec/resize-helper', 'Invalid helper path.')
     require(('--allow-writes' in daemon['ProgramArguments']) == (manifest['mode'] == 'write'), 'Incorrect write permission.')
     require(daemon['KeepAlive'] and daemon['RunAtLoad'] and daemon['AbandonProcessGroup'], 'Invalid helper supervision.')

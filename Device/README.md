@@ -26,7 +26,7 @@ Resize APFS. The original boot hooks and daemon remain. The release ZIP contains
 our payload, launcher, Linux host tools and their corresponding source.
 
 The loader bundle retains the stock `palera1nLoader.app` path for boot compatibility;
-its bundle identifier is `dev.omarchy.resize-apfs`. Overlay SSH, telnet and debug
+its bundle identifier is `org.orchardlinux.resize-apfs`. Overlay SSH, telnet and debug
 shell listeners are disabled. Existing jailbreak services outside this overlay
 are not removed or reconfigured.
 
@@ -210,7 +210,7 @@ the steps, what we depend on and what to do when something changed.
    same notice and **Try again** instead of trying again by itself.
 3. As root and outside the sandbox (`runAsRoot:` and `runUnsandboxed:`), the app puts the helper
    at `/var/jb/usr/libexec/resize-helper` and its launch daemon at
-   `/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist`, unless both are there
+   `/var/jb/Library/LaunchDaemons/org.orchardlinux.resize-apfs.installed-helper.plist`, unless both are there
    unchanged. The helper must be inside the jailbreak root: launchd may not start programs
    from the data partition on iOS 15 and later. Right after obtaining access this happens
    before the screen restart, which then starts the daemon (Dopamine loads that folder's
@@ -242,7 +242,7 @@ with an Apple ID re-signs every program in it, which would cost the helper its e
 The launcher asks the user to confirm Developer Mode is on. On a Mac whose Xcode is signed in,
 `scripts/xcode_signing.py` signs the app with that account: Xcode builds a one-file stub app
 with automatic signing for the connected device (registering it and making the profile), the
-stub's profile, entitlements and certificate sign the app as `dev.orchard.dopamine.<team>`, and
+stub's profile, entitlements and certificate sign the app as `org.orchardlinux.resize-apfs.<team>`, and
 `devicectl` installs it. Otherwise `scripts/sideload.py` signs and installs it with the pinned
 xtool (2.0.0-beta.2; AppImage on Linux, notarized app on macOS, run with `XTL_CLI=1`):
 `xtool auth login` once, in the user's terminal, then `xtool install --usb --udid`, which

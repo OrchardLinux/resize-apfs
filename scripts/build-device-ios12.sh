@@ -39,7 +39,7 @@ swiftc -I "$build" -L "$build" -lResizeCore App/*.swift \
 cp App/Info.plist "$app/Info.plist"
 # JetBrains Mono (SIL OFL 1.1, App/Fonts/OFL.txt ships alongside the fonts).
 cp -R App/Fonts "$app/Fonts"
-plutil -replace CFBundleIdentifier -string dev.omarchy.resize-apfs "$app/Info.plist"
+plutil -replace CFBundleIdentifier -string org.orchardlinux.resize-apfs "$app/Info.plist"
 plutil -replace CFBundleExecutable -string ResizeAPFS "$app/Info.plist"
 plutil -replace CFBundleName -string ResizeAPFS "$app/Info.plist"
 plutil -replace MinimumOSVersion -string 12.0 "$app/Info.plist"

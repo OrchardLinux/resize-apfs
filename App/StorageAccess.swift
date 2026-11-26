@@ -28,7 +28,10 @@ final class StorageAccess: @unchecked Sendable {
     /// Inside the jailbreak root: iOS 15 and later lets launchd start programs only from there,
     /// not from the data partition (where the helper's own files stay, in `folder`).
     static let helper = "/var/jb/usr/libexec/resize-helper"
-    static let daemon = "/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist"
+    static let daemon = "/var/jb/Library/LaunchDaemons/org.orchardlinux.resize-apfs.installed-helper.plist"
+    /// Where earlier builds put it, under the name the boot through DFU also used. Removed
+    /// when the helper is put in place, so the old job is not started beside the new one.
+    static let earlierDaemon = "/var/jb/Library/LaunchDaemons/dev.omarchy.resize-apfs.plist"
     /// Where the helper publishes its socket and credentials. Not its usual /var/run folder:
     /// the helper starts early in the screen restart, and iOS empties /var/run after that,
     /// leaving the helper listening on a socket nobody can find.
@@ -208,7 +211,7 @@ final class StorageAccess: @unchecked Sendable {
         let plist: [String: Any] = [
             // Its own label: the boot through DFU brings a helper job of its own, and launchd
             // runs one job per label.
-            "Label": "dev.omarchy.resize-apfs.installed",
+            "Label": "org.orchardlinux.resize-apfs.installed-helper",
             "ProgramArguments": [Self.helper, "--allow-writes", "--ipc-dir", Self.ipc, "--embedded", identifier, process],
             "RunAtLoad": true, "KeepAlive": true, "ThrottleInterval": 30,
             "UserName": "root", "GroupName": "wheel",
@@ -233,6 +236,7 @@ final class StorageAccess: @unchecked Sendable {
         var outcome = "the privileged block did not run"
         let install = { [self] in
             let files = FileManager.default
+            try? files.removeItem(atPath: Self.earlierDaemon)
             if files.contents(atPath: Self.helper) == payload && files.contents(atPath: Self.daemon) == plist {
                 outcome = "helper and daemon are in place"
                 return
