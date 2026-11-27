@@ -138,6 +138,15 @@ class MergeTests(unittest.TestCase):
         self.assertIn(r"printf 'RESIZE-APFS-HELPER\n'", build)
         self.assertIn(r'Data("RESIZE-APFS-HELPER\n".utf8)', app)
 
+    def test_files_dated_before_1980_are_packed(self):
+        # A Nix store dates every file 1970; ZIP starts at 1980.
+        import os
+        for path in self.payload.rglob('*'):
+            os.utime(path, (1, 1), follow_symlinks=False)
+        with self.prepared() as archive:
+            self.assertTrue(archive.namelist())
+            self.assertTrue(all(info.date_time[0] >= 1980 for info in archive.infolist()))
+
     def test_an_ipa_with_a_path_outside_itself_is_refused(self):
         with zipfile.ZipFile(self.root / 'bad.ipa', 'w') as archive:
             archive.writestr('../escape', b'x')
