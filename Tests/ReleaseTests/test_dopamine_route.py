@@ -55,9 +55,11 @@ class RunTests(unittest.TestCase):
         asked = []
         self.run_route(FakeSigner(False), lambda: self.fail('no device needed'), asked)
         self.assertEqual(len(asked), 2)
-        self.assertIn('Sign Resize APFS with your Apple ID', asked[1])
+        self.assertIn('Sign Resize APFS with your Apple ID', asked[0])
+        # Developer Mode comes after the install: iOS lists it only then.
+        self.assertIn('Developer Mode', asked[1])
         prepared = self.root / 'work/ResizeAPFS.ipa'
-        self.assertIn(str(prepared), asked[1])
+        self.assertIn(str(prepared), asked[0])
         with zipfile.ZipFile(prepared) as archive:
             self.assertIn('Payload/Dopamine.app/Frameworks/ResizeAccess.dylib', archive.namelist())
 

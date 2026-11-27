@@ -239,7 +239,8 @@ with an Apple ID re-signs every program in it, which would cost the helper its e
 
 ### Signing and installing
 
-The launcher asks the user to confirm Developer Mode is on. On a Mac whose Xcode is signed in,
+The launcher signs and installs first, then asks the user to turn on Developer Mode, which iOS
+lists only once a developer-signed app is installed. On a Mac whose Xcode is signed in,
 `scripts/xcode_signing.py` signs the app with that account: Xcode builds a one-file stub app
 with automatic signing for the connected device (registering it and making the profile), the
 stub's profile, entitlements and certificate sign the app as `org.orchardlinux.resize-apfs.<team>`, and
