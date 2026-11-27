@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix='release-', dir=ROOT / '.work') as tempo
     subprocess.run([sys.executable, str(ROOT / 'scripts/check-release.py'), '--release-dir', str(package)], check=True)
     pending = archive.with_suffix('.zip.pending')
     try:
-        with zipfile.ZipFile(pending, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        with zipfile.ZipFile(pending, 'w', zipfile.ZIP_DEFLATED, compresslevel=9, strict_timestamps=False) as z:
             for path in sorted(p for p in package.rglob('*') if p.is_file()):
                 z.write(path, str(path.relative_to(package.parent)))
         os.replace(pending, archive)

@@ -114,7 +114,8 @@ def pack(folder, output, modes):
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(folder.rglob('*')):
             name = path.relative_to(folder).as_posix() + ('/' if path.is_dir() else '')
-            info = zipfile.ZipInfo.from_file(path, name)
+            # Files dated before 1980 (a Nix store dates them 1970) get ZIP's earliest date.
+            info = zipfile.ZipInfo.from_file(path, name, strict_timestamps=False)
             # Keep the original modes: executables must stay executable after signing.
             info.external_attr = (modes.get(name) or (0o755 if path.is_dir() else 0o644)) << 16
             if path.is_dir():
