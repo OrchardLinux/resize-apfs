@@ -66,6 +66,7 @@ device until it is done.
 | --- | --- | --- |
 | iPhone XR | 18.3.2 | Dopamine |
 | iPad (6th generation) | 17.7.11 | Dopamine |
+| iPhone 8 Plus | 16.7.16 | Dopamine |
 | iPhone X (d221) | 16.7 | DFU (palera1n), Linux host |
 | iPad (6th generation) | 17.7.11 | DFU (palera1n) |
 | iPad mini 4 (J96) | 15.8.3 | DFU (palera1n), Linux host |
