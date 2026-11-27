@@ -6,9 +6,10 @@ APFS, obtains storage access through Dopamine by itself, installs its storage he
 launch daemon and talks to it as root (App/StorageAccess.swift). Nothing is copied to the
 device from here afterwards: no SSH, no password, nothing to remove at the end.
 
-Before installing, the user confirms Developer Mode is on. The launcher then signs the app
-with the user's Apple ID and installs it, after one confirmation (sideload.py); where xtool has
-no release, it leaves the prepared app for the user to sign and install themselves.
+The launcher signs the app with the user's Apple ID and installs it, after one confirmation
+(sideload.py); where xtool has no release, it leaves the prepared app for the user to sign and
+install themselves. Then the user turns on Developer Mode: iOS shows that setting only once an
+app signed this way is on the device.
 """
 import pathlib
 
@@ -19,9 +20,11 @@ from image_format import require
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-DEVELOPER_MODE = ('Turn on Developer Mode on the device: Settings > Privacy & Security > Developer Mode, '
-                  'then restart it and confirm "Turn On".\n'
-                  'Press Enter when Developer Mode is on. ')
+DEVELOPER_MODE = ('Turn on Developer Mode on the device: Settings > Privacy & Security > Developer Mode '
+                  '(it appears now that Resize APFS is installed), then restart it and confirm "Turn On". '
+                  'If it is already on, skip this.\n'
+                  'Then trust your Apple ID: Settings > General > VPN & Device Management.\n'
+                  'Press Enter when both are done. ')
 # Where xtool has no release: the user signs and installs it with a tool of their own.
 SIGN = ('Sign Resize APFS with your Apple ID and install it on the device, with Xcode, Sideloadly, '
         'AltStore or another sideloading tool. The app:\n'
@@ -44,11 +47,12 @@ def run(ipa, ask=input, signer=sideload, devices=usbmux.devices, work=None, payl
     """Install the app on the connected device; the user confirms each step."""
     payload = sideload.PAYLOAD if payload is None else payload
     sideload.payload_key(payload)
-    ask(DEVELOPER_MODE)
     if signer.available():
         signer.install(ipa, device(devices), ask)
     else:
         work = pathlib.Path(work or ROOT / '.work/sideload')
         work.mkdir(parents=True, exist_ok=True)
         ask(SIGN.format(embed.prepared_ipa(ipa, work, payload)))
+    # iOS lists Developer Mode only once a developer-signed app is installed.
+    ask(DEVELOPER_MODE)
     print(OPEN, flush=True)
